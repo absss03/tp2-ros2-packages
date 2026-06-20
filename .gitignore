@@ -1,0 +1,27 @@
+# ROS 2 Workspace
+build/
+install/
+log/
+
+# CMake y C++
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+*.o
+*.so
+*.a
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Sistema y Editores (WSL, Windows, VSCode)
+.vscode/
+.idea/
+Thumbs.db
+*~
+*.swp
