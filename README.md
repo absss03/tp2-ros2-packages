@@ -35,5 +35,5 @@
 
 7. Ejecutar el launchfile
    ```bash
-    ros2 launch bringup bringup.launch.xml
+    ros2 launch my_robot_bringup bringup.launch.xml
    ```
