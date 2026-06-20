@@ -140,6 +140,8 @@ class WallFollowingNode(Node):
                 modo = 'libre'
 
             # --- Error YAW (alineacion a cardinal) ---
+            if self.yaw_actual is None or self.yaw_referencia is None:
+                return
             # error_a_cardinal devuelve cuanto girar para alinearse.
             # Lo negamos para que el signo coincida con la convencion
             # del error_lidar (correccion = -k*error)
