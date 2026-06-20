@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>my_robot_description</name>
+  <version>0.0.0</version>
+  <description>Descripcion URDF/Xacro del robot movil diferencial</description>
+  <maintainer email="francisco@mail.com">francisco-soria</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
