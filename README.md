@@ -30,10 +30,20 @@
 
 6. Cargar la configuración local para que la terminal reconozca los paquetes recién compilados
    ```bash
-    source install/setup.bash
+   source install/setup.bash
    ```
 
 7. Ejecutar el launchfile
    ```bash
-    ros2 launch my_robot_bringup bringup.launch.xml
+   ros2 launch my_robot_bringup bringup.launch.xml
+   ```
+
+8. En una nueva terminal ejecutar el nodo wall_following_node.py
+   ```bash
+   cd ~/ros2_ws
+   
+   source /opt/ros/jazzy/setup.bash
+   source install/setup.bash
+
+   ros2 run my_robot_navigation wall_following_node
    ```
