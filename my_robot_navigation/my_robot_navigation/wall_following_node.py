@@ -174,7 +174,6 @@ class WallFollowingNode(Node):
             f'fd:{frente_der:.2f} fi:{frente_izq:.2f}',
             throttle_duration_sec=1.0)
 
-
     def scan_callback(self, msg):
         ranges = [r if math.isfinite(r) else 12.0 for r in msg.ranges]
         if len(ranges) < 180:
@@ -191,110 +190,104 @@ class WallFollowingNode(Node):
         self.frente_der = min(ranges[150:170])
         self.frente_izq = min(ranges[10:30])
 
+        if self.estado == 'AVANZAR':
+            self.actualizar_velocidad(self.adelante, self.derecha, self.izquierda,
+                                      self.frente_der, self.frente_izq)
+
+            der_libre = self.derecha   > self.umbral_lateral
+            izq_libre = self.izquierda > self.umbral_lateral
+            frente_libre = self.adelante > self.distancia_frontal
+
+            cmd = Twist()
+
+            if der_libre and self.ultimo_giro != 'DER':
+                self.estado = 'AVANCE_PREVIO_DER'
+                self.contador_maniobra = 0
+                self.ultimo_giro = 'DER'
+                self.get_logger().info('Decision: doblar DERECHA (avanzo antes)', throttle_duration_sec=1.0)
+                return
+
+            elif frente_libre:
+                if self.yaw_referencia is None:
+                    return
+                # --- Error LIDAR (centrado lateral) ---
+                der_hay = self.derecha   < self.umbral_lateral
+                izq_hay = self.izquierda < self.umbral_lateral
+                if der_hay and izq_hay:
+                    error_lidar = self.derecha - self.izquierda      # centrado entre paredes
+                    modo = 'centrado'
+                elif der_hay:
+                    error_lidar = self.derecha - self.distancia_pared
+                    modo = 'sigue-der'
+                elif izq_hay:
+                    error_lidar = self.distancia_pared - self.izquierda
+                    modo = 'sigue-izq'
+                else:
+                    error_lidar = 0.0
+                    modo = 'libre'
+
+                # --- Error YAW (alineacion a cardinal) ---
+                error_yaw = -self.error_a_cardinal()
+
+                # --- Peso adaptativo segun cercania a pared ---
+                distancia_minima = min(self.derecha, self.izquierda)
+                if distancia_minima > 0.15:
+                    # Zona segura: priorizar yaw (ir derecho)
+                    peso_yaw, peso_lidar = 0.9, 0.1
+                else:
+                    # Cerca de pared: priorizar lidar (alejarse)
+                    peso_yaw, peso_lidar = 0.3, 0.7
+
+                # --- Combinar ambos errores ---
+                kp_lidar = 2.0
+                kp_yaw   = 1.5
+                correccion_lidar = -kp_lidar * error_lidar
+                correccion_yaw   = -kp_yaw * error_yaw
+                salida = peso_lidar * correccion_lidar + peso_yaw * correccion_yaw
+
+                correccion = max(min(salida, self.vel_angular * 0.5),
+                                 -self.vel_angular * 0.5)
+                
+                cmd.linear.x  = self.velocidad_actual
+                cmd.angular.z = correccion
+                self.cmd_pub.publish(cmd)
+                self.get_logger().info(
+                    f'Recto [{modo}] der:{self.derecha:.2f} izq:{self.izquierda:.2f} '
+                    f'e_lidar:{error_lidar:.2f} e_yaw:{math.degrees(error_yaw):.1f}',
+                    throttle_duration_sec=1.0)
+
+            elif izq_libre and self.ultimo_giro != 'IZQ':
+                self.estado = 'GIRO_IZQ'
+                self.contador_maniobra = 0
+                self.ultimo_giro = 'IZQ'
+                self.get_logger().info('Decision: doblar IZQUIERDA', throttle_duration_sec=1.0)
+                return
+
+            else:
+                # Las tres salidas bloqueadas => callejon confirmado: giro en U directo.
+                if self.ultimo_giro == 'U':
+                    # todavia no avance suficiente desde la ultima U, no hacer otra
+                    cmd.linear.x = self.vel_precaucion
+                    self.cmd_pub.publish(cmd)
+                    return
+                self.estado = 'GIRO_U'
+                self.contador_maniobra = 0
+                self.lado_verificacion = 'IZQ' if self.izquierda > self.derecha else 'DER'
+                self.get_logger().info(
+                    f'Decision: giro en U — adel:{self.adelante:.2f} der:{self.derecha:.2f} izq:{self.izquierda:.2f}',
+                    throttle_duration_sec=1.0)
+                return
+
     def control_loop(self):
         # Evitar correr si no se ha recibido la odometria/referencia aun
         if self.yaw_referencia is None:
             return
 
-        adelante = self.adelante
-        derecha = self.derecha
-        izquierda = self.izquierda
-        frente_der = self.frente_der
-        frente_izq = self.frente_izq
-
-        # Actualizar velocidad adaptativa (solo cuando avanza, no en maniobras)
-        if self.estado == 'AVANZAR':
-            self.actualizar_velocidad(adelante, derecha, izquierda,
-                                      frente_der, frente_izq)
-
-        der_libre = derecha   > self.umbral_lateral
-        izq_libre = izquierda > self.umbral_lateral
-        frente_libre = adelante > self.distancia_frontal
-
-        cmd = Twist()
-
+        # Solo ejecutamos el bucle a alta frecuencia para maniobras activas
         if self.estado != 'AVANZAR':
-            self.ejecutar_maniobra(cmd, adelante, frente_libre)
+            cmd = Twist()
+            self.ejecutar_maniobra(cmd, self.adelante, self.adelante > self.distancia_frontal)
             self.cmd_pub.publish(cmd)
-            return
-
-        if der_libre and self.ultimo_giro != 'DER':
-            self.estado = 'AVANCE_PREVIO_DER'
-            self.contador_maniobra = 0
-            self.ultimo_giro = 'DER'
-            self.get_logger().info('Decision: doblar DERECHA (avanzo antes)', throttle_duration_sec=1.0)
-
-        elif frente_libre:
-
-            # --- Error LIDAR (centrado lateral) ---
-            der_hay = derecha   < self.umbral_lateral
-            izq_hay = izquierda < self.umbral_lateral
-            if der_hay and izq_hay:
-                error_lidar = derecha - izquierda      # centrado entre paredes
-                modo = 'centrado'
-            elif der_hay:
-                error_lidar = derecha - self.distancia_pared
-                modo = 'sigue-der'
-            elif izq_hay:
-                error_lidar = self.distancia_pared - izquierda
-                modo = 'sigue-izq'
-            else:
-                error_lidar = 0.0
-                modo = 'libre'
-
-            # --- Error YAW (alineacion a cardinal) ---
-            # error_a_cardinal devuelve cuanto girar para alinearse.
-            # Lo negamos para que el signo coincida con la convencion
-            # del error_lidar (correccion = -k*error)
-            error_yaw = -self.error_a_cardinal()
-
-            # --- Peso adaptativo segun cercania a pared ---
-            distancia_minima = min(derecha, izquierda)
-            if distancia_minima > 0.15:
-                # Zona segura: priorizar yaw (ir derecho)
-                peso_yaw, peso_lidar = 0.9, 0.1
-            else:
-                # Cerca de pared: priorizar lidar (alejarse)
-                peso_yaw, peso_lidar = 0.3, 0.7
-
-            # --- Combinar ambos errores ---
-            kp_lidar = 2.0
-            kp_yaw   = 1.5
-            correccion_lidar = -kp_lidar * error_lidar
-            correccion_yaw   = -kp_yaw * error_yaw
-            salida = peso_lidar * correccion_lidar + peso_yaw * correccion_yaw
-
-            correccion = max(min(salida, self.vel_angular * 0.5),
-                             -self.vel_angular * 0.5)
-            
-            # cmd.linear.x  = self.vel_lineal
-            cmd.linear.x  = self.velocidad_actual
-            cmd.angular.z = correccion
-            self.get_logger().info(
-                f'Recto [{modo}] der:{derecha:.2f} izq:{izquierda:.2f} '
-                f'e_lidar:{error_lidar:.2f} e_yaw:{math.degrees(error_yaw):.1f}',
-                throttle_duration_sec=1.0)
-
-        elif izq_libre and self.ultimo_giro != 'IZQ':
-            self.estado = 'GIRO_IZQ'
-            self.contador_maniobra = 0
-            self.ultimo_giro = 'IZQ'
-            self.get_logger().info('Decision: doblar IZQUIERDA', throttle_duration_sec=1.0)
-
-        else:
-            # Las tres salidas bloqueadas => callejon confirmado: giro en U directo.
-            if self.ultimo_giro == 'U':
-                # todavia no avance suficiente desde la ultima U, no hacer otra
-                cmd.linear.x = self.vel_precaucion
-                self.cmd_pub.publish(cmd)
-                return
-            self.estado = 'GIRO_U'
-            self.contador_maniobra = 0
-            self.lado_verificacion = 'IZQ' if izquierda > derecha else 'DER'
-            self.get_logger().info(
-                f'Decision: giro en U — adel:{adelante:.2f} der:{derecha:.2f} izq:{izquierda:.2f}',
-                throttle_duration_sec=1.0)
-        self.cmd_pub.publish(cmd)
 
     def ejecutar_maniobra(self, cmd, adelante, frente_libre):
         """Ejecuta la maniobra en curso paso a paso."""
@@ -399,7 +392,6 @@ class WallFollowingNode(Node):
                     self.estado = 'GIRO_U'
                     self.contador_maniobra = 0
 
-
         elif self.estado == 'GIRO_U':
             self.contador_maniobra += 1
             if self.contador_maniobra == 1:
@@ -431,7 +423,6 @@ class WallFollowingNode(Node):
                 self.x_fin_giro = self.pos_x
                 self.y_fin_giro = self.pos_y
                 self.ultimo_giro = 'U'
-
 
 
 def main(args=None):
