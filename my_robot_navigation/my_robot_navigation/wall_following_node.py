@@ -14,8 +14,18 @@ class WallFollowingNode(Node):
         self.distancia_pared    = 0.25
         self.distancia_frontal  = 0.25
         self.umbral_lateral     = 0.40
-        self.vel_lineal         = 0.18
+        # self.vel_lineal         = 0.18
         self.vel_angular        = 0.9
+
+        self.vel_rapida        = 0.30
+        self.vel_precaucion    = 0.18 
+        self.vel_avance_previo = 0.10 
+        self.velocidad_actual  = self.vel_rapida
+        self.modo_precaucion   = False
+
+        self.umbral_entrar = 0.40
+        self.umbral_salir  = 0.55
+
 
         # Estado de la maquina de maniobras
         self.estado = 'AVANZAR'
@@ -23,14 +33,25 @@ class WallFollowingNode(Node):
         self.lado_verificacion = 'DER'
         self.error_anterior = 0.0
         self.ultimo_giro = None
-        self.pasos_rectos = 0
+
         self.dist_retroceso_u = 0.12   # cuanto retroceder antes de girar en U
 
+        # Inicialización de variables de lectura del LIDAR
+        self.adelante = 12.0
+        self.derecha = 12.0
+        self.izquierda = 12.0
+        self.frente_der = 12.0
+        self.frente_izq = 12.0
+
+        # Suscriptor a los datos del LIDAR
         self.scan_sub = self.create_subscription(
             LaserScan, '/scan', self.scan_callback, 10)
+        
         # Suscriptor a la odometria para conocer la orientacion (yaw)
         self.odom_sub = self.create_subscription(
             Odometry, '/odom', self.odom_callback, 10)
+        
+        # Publicador de velocidad
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
         # Yaw actual del robot en radianes (se actualiza en odom_callback)
@@ -51,6 +72,12 @@ class WallFollowingNode(Node):
         self.x_inicio = 0.0
         self.y_inicio = 0.0
 
+        self.x_fin_giro = 0.0
+        self.y_fin_giro = 0.0
+
+        # Timer para el bucle de control a 20 Hz (cada 50 ms)
+        self.control_timer = self.create_timer(0.05, self.control_loop)
+
         self.get_logger().info('Nodo de navegacion iniciado')
 
     def odom_callback(self, msg):
@@ -63,6 +90,12 @@ class WallFollowingNode(Node):
         # Guardar posicion para medir distancia en maniobras
         self.pos_x = msg.pose.pose.position.x
         self.pos_y = msg.pose.pose.position.y
+
+        if self.ultimo_giro is not None:
+            dist = math.hypot(self.pos_x - self.x_fin_giro,
+                            self.pos_y - self.y_fin_giro)
+            if dist > 0.20:
+                self.ultimo_giro = None
 
         # En la primera lectura, capturar la referencia inicial
         if self.yaw_referencia is None:
@@ -92,13 +125,87 @@ class WallFollowingNode(Node):
         cardinal_mas_cercana = round(rel / paso) * paso
         # Error = cuanto falta para llegar a esa cardinal
         return self.normalizar_angulo(cardinal_mas_cercana - rel)
+    
+    def actualizar_velocidad(self, adelante, derecha, izquierda,
+                              frente_der, frente_izq):
+        """Actualiza self.velocidad_actual segun la proximidad de eventos.
+ 
+        Logica con histeresis:
+          - Si hay algun evento cercano  → precaucion (vel baja).
+          - Si el pasillo esta claramente despejado → rapido (vel alta).
+          - En la banda intermedia → mantiene el estado anterior (sin titileo).
+ 
+        Los rayos diagonales (frente_der, frente_izq) anticipan aperturas
+        laterales antes de que el rayo perpendicular las detecte, dando
+        tiempo extra para frenar antes del punto de decision.
+        """
+        # Condicion de entrada a precaucion: cualquier evento relevante
+        evento = (
+            adelante   < self.umbral_entrar or   # pared de frente cercana
+            derecha    > self.umbral_entrar or   # apertura a la derecha
+            izquierda  > self.umbral_entrar or   # apertura a la izquierda
+            frente_der > self.umbral_entrar or   # apertura diagonal der (anticipacion)
+            frente_izq > self.umbral_entrar       # apertura diagonal izq (anticipacion)
+        )
+ 
+        # Condicion de salida de precaucion: pasillo claramente abierto
+        despejado = (
+            adelante   > self.umbral_salir and
+            derecha    < self.umbral_entrar and
+            izquierda  < self.umbral_entrar and
+            frente_der < self.umbral_entrar and
+            frente_izq < self.umbral_entrar
+        )
+ 
+        if evento:
+            self.modo_precaucion = True
+        elif despejado:
+            self.modo_precaucion = False
+        # En la banda intermedia: mantiene self.modo_precaucion anterior
+ 
+        self.velocidad_actual = (self.vel_precaucion
+                                 if self.modo_precaucion
+                                 else self.vel_rapida)
+ 
+        self.get_logger().info(
+            f'Velocidad: {self.velocidad_actual:.2f} '
+            f'[{"PRECAUCION" if self.modo_precaucion else "RAPIDO"}] '
+            f'adel:{adelante:.2f} der:{derecha:.2f} izq:{izquierda:.2f} '
+            f'fd:{frente_der:.2f} fi:{frente_izq:.2f}',
+            throttle_duration_sec=1.0)
+
 
     def scan_callback(self, msg):
         ranges = [r if math.isfinite(r) else 12.0 for r in msg.ranges]
+        if len(ranges) < 180:
+            return
 
-        adelante  = min(ranges[175:180] + ranges[0:5])
-        derecha   = min(ranges[125:145])
-        izquierda = min(ranges[35:55])
+        self.adelante  = min(ranges[175:180] + ranges[0:5])
+        self.derecha   = min(ranges[125:145])
+        self.izquierda = min(ranges[35:55])
+
+        # Rayos diagonales: anticipan aperturas antes que los perpendiculares.
+        # Con 180 muestras de 0° a 360° (2°/sample):
+        #   frente_der ≈ 300°–340° (indice 150–170): adelante-derecha
+        #   frente_izq ≈  20°– 60° (indice  10– 30): adelante-izquierda
+        self.frente_der = min(ranges[150:170])
+        self.frente_izq = min(ranges[10:30])
+
+    def control_loop(self):
+        # Evitar correr si no se ha recibido la odometria/referencia aun
+        if self.yaw_referencia is None:
+            return
+
+        adelante = self.adelante
+        derecha = self.derecha
+        izquierda = self.izquierda
+        frente_der = self.frente_der
+        frente_izq = self.frente_izq
+
+        # Actualizar velocidad adaptativa (solo cuando avanza, no en maniobras)
+        if self.estado == 'AVANZAR':
+            self.actualizar_velocidad(adelante, derecha, izquierda,
+                                      frente_der, frente_izq)
 
         der_libre = derecha   > self.umbral_lateral
         izq_libre = izquierda > self.umbral_lateral
@@ -115,13 +222,9 @@ class WallFollowingNode(Node):
             self.estado = 'AVANCE_PREVIO_DER'
             self.contador_maniobra = 0
             self.ultimo_giro = 'DER'
-            self.pasos_rectos = 0
             self.get_logger().info('Decision: doblar DERECHA (avanzo antes)', throttle_duration_sec=1.0)
 
         elif frente_libre:
-            self.pasos_rectos += 1
-            if self.pasos_rectos >= 2:
-                self.ultimo_giro = None
 
             # --- Error LIDAR (centrado lateral) ---
             der_hay = derecha   < self.umbral_lateral
@@ -140,8 +243,6 @@ class WallFollowingNode(Node):
                 modo = 'libre'
 
             # --- Error YAW (alineacion a cardinal) ---
-            if self.yaw_actual is None or self.yaw_referencia is None:
-                return
             # error_a_cardinal devuelve cuanto girar para alinearse.
             # Lo negamos para que el signo coincida con la convencion
             # del error_lidar (correccion = -k*error)
@@ -165,7 +266,9 @@ class WallFollowingNode(Node):
 
             correccion = max(min(salida, self.vel_angular * 0.5),
                              -self.vel_angular * 0.5)
-            cmd.linear.x  = self.vel_lineal
+            
+            # cmd.linear.x  = self.vel_lineal
+            cmd.linear.x  = self.velocidad_actual
             cmd.angular.z = correccion
             self.get_logger().info(
                 f'Recto [{modo}] der:{derecha:.2f} izq:{izquierda:.2f} '
@@ -176,11 +279,15 @@ class WallFollowingNode(Node):
             self.estado = 'GIRO_IZQ'
             self.contador_maniobra = 0
             self.ultimo_giro = 'IZQ'
-            self.pasos_rectos = 0
             self.get_logger().info('Decision: doblar IZQUIERDA', throttle_duration_sec=1.0)
 
         else:
             # Las tres salidas bloqueadas => callejon confirmado: giro en U directo.
+            if self.ultimo_giro == 'U':
+                # todavia no avance suficiente desde la ultima U, no hacer otra
+                cmd.linear.x = self.vel_precaucion
+                self.cmd_pub.publish(cmd)
+                return
             self.estado = 'GIRO_U'
             self.contador_maniobra = 0
             self.lado_verificacion = 'IZQ' if izquierda > derecha else 'DER'
@@ -199,7 +306,7 @@ class WallFollowingNode(Node):
                 self.y_inicio = self.pos_y
             # Avanzar recto, enderezando hacia la cardinal mientras avanza
             err_card = self.error_a_cardinal()
-            cmd.linear.x  = self.vel_lineal
+            cmd.linear.x  = self.vel_avance_previo
             cmd.angular.z = max(min(1.0 * err_card,
                                     self.vel_angular * 0.4),
                                 -self.vel_angular * 0.4)
@@ -211,7 +318,6 @@ class WallFollowingNode(Node):
                 throttle_duration_sec=0.5)
             # Doblar cuando el frente esta cerca (esquina) o si llego al tope
             if (adelante < self.umbral_pre_giro
-                    or adelante > self.umbral_cruce
                     or dist >= self.dist_max_avance):
                 self.estado = 'GIRO_DER'
                 self.contador_maniobra = 0
@@ -219,9 +325,11 @@ class WallFollowingNode(Node):
         elif self.estado == 'GIRO_DER':
             self.contador_maniobra += 1
             if self.contador_maniobra == 1:
-                # Fijar el yaw objetivo: 90 grados a la derecha
+                # Fijar el yaw objetivo: 90 grados a la derecha del cardinal actual mas cercano
+                err_card = self.error_a_cardinal()
+                cardinal_actual = self.normalizar_angulo(self.yaw_actual + err_card)
                 self.yaw_objetivo = self.normalizar_angulo(
-                    self.yaw_actual - math.pi / 2.0)
+                    cardinal_actual - math.pi / 2.0)
             
             # Error: cuanto falta para llegar al objetivo (rad)
             err = self.normalizar_angulo(self.yaw_objetivo - self.yaw_actual)
@@ -237,23 +345,31 @@ class WallFollowingNode(Node):
             if abs(err) < math.radians(2):
                 self.estado = 'POST_GIRO'
                 self.contador_maniobra = 0
-            # Tope de seguridad (no deberia activarse nunca)
-            if self.contador_maniobra >= 80:
+            # Tope de seguridad (escalado a 20 Hz, 800 iteraciones = 40 segundos)
+            if self.contador_maniobra >= 800:
                 self.estado = 'POST_GIRO'
                 self.contador_maniobra = 0
 
         elif self.estado == 'POST_GIRO':
             self.contador_maniobra += 1
-            cmd.linear.x  = self.vel_lineal * 0.5
+
+            cmd.linear.x  = self.vel_precaucion * 0.5
             cmd.angular.z = 0.0
-            if self.contador_maniobra >= 3:
+
+            # Escalado a 20 Hz (30 iteraciones = 1.5 segundos)
+            if self.contador_maniobra >= 30:
                 self.estado = 'AVANZAR'
+                self.x_fin_giro = self.pos_x
+                self.y_fin_giro = self.pos_y
 
         elif self.estado == 'GIRO_IZQ':
             self.contador_maniobra += 1
             if self.contador_maniobra == 1:
+                # Fijar el yaw objetivo: 90 grados a la izquierda del cardinal actual mas cercano
+                err_card = self.error_a_cardinal()
+                cardinal_actual = self.normalizar_angulo(self.yaw_actual + err_card)
                 self.yaw_objetivo = self.normalizar_angulo(
-                    self.yaw_actual + math.pi / 2.0)
+                    cardinal_actual + math.pi / 2.0)
 
             err = self.normalizar_angulo(self.yaw_objetivo - self.yaw_actual)
 
@@ -265,23 +381,24 @@ class WallFollowingNode(Node):
             if abs(err) < math.radians(2):
                 self.estado = 'POST_GIRO'
                 self.contador_maniobra = 0
-            if self.contador_maniobra >= 80:
+            # Escalado a 20 Hz (800 iteraciones = 40 segundos)
+            if self.contador_maniobra >= 800:
                 self.estado = 'POST_GIRO'
                 self.contador_maniobra = 0
 
         elif self.estado == 'VERIFICAR_U':
             self.contador_maniobra += 1
-            if self.lado_verificacion == 'IZQ':
-                cmd.angular.z = self.vel_angular
-            else:
-                cmd.angular.z = -self.vel_angular
+            cmd.angular.z = (self.vel_angular if self.lado_verificacion == 'IZQ'
+                             else -self.vel_angular)
             cmd.linear.x = 0.0
-            if self.contador_maniobra >= 2:
+            # Escalado a 20 Hz (20 iteraciones = 1.0 segundos)
+            if self.contador_maniobra >= 20:
                 if adelante > self.distancia_frontal:
                     self.estado = 'AVANZAR'
                 else:
                     self.estado = 'GIRO_U'
                     self.contador_maniobra = 0
+
 
         elif self.estado == 'GIRO_U':
             self.contador_maniobra += 1
@@ -306,11 +423,16 @@ class WallFollowingNode(Node):
             # 1ra mitad del giro: retroceder (despeja la cola del rincon).
             # 2da mitad: avanzar para completar los 180°.
             if abs(err) > math.radians(90):
-                cmd.linear.x = -self.vel_lineal * 0.3
+                cmd.linear.x = -self.vel_precaucion * 0.3
             else:
-                cmd.linear.x =  self.vel_lineal * 0.3
+                cmd.linear.x =  self.vel_precaucion * 0.3
             if abs(err) < math.radians(5):
                 self.estado = 'AVANZAR'
+                self.x_fin_giro = self.pos_x
+                self.y_fin_giro = self.pos_y
+                self.ultimo_giro = 'U'
+
+
 
 def main(args=None):
     rclpy.init(args=args)
