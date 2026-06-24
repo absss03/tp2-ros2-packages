@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'wall_following_node = my_robot_navigation.wall_following_node:main',
+            'grid_mapper_node = my_robot_navigation.grid_mapper_node:main'
         ],
     },
 )
