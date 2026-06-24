@@ -3,38 +3,60 @@ from rclpy.node import Node
 from nav_msgs.msg import Odometry, OccupancyGrid
 from std_msgs.msg import Header
 from rclpy.qos import QoSProfile, DurabilityPolicy
-import math
 
 class GridMapperNode(Node):
 
     def __init__(self):
         super().__init__('grid_mapper_node')
 
-        # --- Parametros de la grilla ---
-        # Resolucion: mitad de una celda de pared del laberinto (0.45m / 2)
-        self.resolucion = 0.225   # metros por celda
+        # --- Parametros ROS2 (ajustables sin modificar el codigo) ---
+        # Posicion de spawn del robot en el mundo de Gazebo
+        self.declare_parameter('spawn_x',      0.0)
+        self.declare_parameter('spawn_y',      0.0)
+        # Limites del laberinto en coordenadas del mundo
+        self.declare_parameter('world_min_x', -3.825)
+        self.declare_parameter('world_max_x',  3.825)
+        self.declare_parameter('world_min_y', -3.150)
+        self.declare_parameter('world_max_y',  3.150)
+        # Resolucion de la grilla y margen extra alrededor del laberinto
+        self.declare_parameter('resolucion',   0.225)
+        self.declare_parameter('margen',       1.0)
 
-        # Tamanio: 40x40 celdas -> cubre 9m x 9m
-        self.filas = 40
-        self.cols  = 40
+        spawn_x     = self.get_parameter('spawn_x').value
+        spawn_y     = self.get_parameter('spawn_y').value
+        world_min_x = self.get_parameter('world_min_x').value
+        world_max_x = self.get_parameter('world_max_x').value
+        world_min_y = self.get_parameter('world_min_y').value
+        world_max_y = self.get_parameter('world_max_y').value
+        self.resolucion = self.get_parameter('resolucion').value
+        margen      = self.get_parameter('margen').value
 
-        # Origen de la grilla en coordenadas del mundo Gazebo.
-        # Con origen en (-4.5, -4.5) la grilla cubre de -4.5 a +4.5
-        # en ambos ejes, centrada en el origen del mundo.
-        self.origen_x = -4.5   # metros (esquina inferior izquierda)
-        self.origen_y = -4.5   # metros (esquina inferior izquierda)
+        # --- Parametros de la grilla en coordenadas de odometria ---
+        # La odometria arranca en (0,0) cuando el robot esta en (spawn_x, spawn_y).
+        # Para pasar de coordenadas del mundo a odom: x_odom = x_mundo - spawn_x
+        # El borde inferior-izquierdo del laberinto en odom es:
+        #   world_min - spawn - margen
+        self.origen_x = (world_min_x - spawn_x) - margen
+        self.origen_y = (world_min_y - spawn_y) - margen
+
+        # Tamaño de la grilla: cubre el laberinto completo mas margen en cada lado
+        # REVISAR
+        ancho = (world_max_x - world_min_x) + 2.0 * margen
+        alto  = (world_max_y - world_min_y) + 2.0 * margen
+        self.cols  = int(ancho / self.resolucion) + 1
+        self.filas = int(alto  / self.resolucion) + 1
 
         # --- Matriz de contadores internos ---
         # Cada celda almacena cuantas veces paso el robot por ella.
         # Se inicializa en 0 (no visitado).
         self.contadores = [[0] * self.cols for _ in range(self.filas)]
-        self.ultima_celda = None  # Almacena (fila, col) de la ultima posicion del robot
+        self.ultima_celda = None
 
         # --- ROS2: suscripcion y publicacion ---
         self.odom_sub = self.create_subscription(
             Odometry, '/odom', self.odom_callback, 10)
 
-        # Usar QoS Transient Local para que RViz reciba la grilla correctamente
+        # QoS Transient Local: RViz recibe el ultimo mensaje al conectarse
         self.grid_qos = QoSProfile(
             depth=1,
             durability=DurabilityPolicy.TRANSIENT_LOCAL
@@ -42,21 +64,22 @@ class GridMapperNode(Node):
         self.grid_pub = self.create_publisher(
             OccupancyGrid, '/visited_grid', self.grid_qos)
 
-        # Publicar la grilla inicial vacia
+        # Publicar grilla inicial vacia
         self.publicar_grilla()
 
         self.get_logger().info(
             f'GridMapper iniciado — grilla {self.filas}x{self.cols} '
-            f'@ {self.resolucion}m/celda, '
-            f'origen ({self.origen_x}, {self.origen_y})')
+            f'@ {self.resolucion}m/celda | '
+            f'origen odom ({self.origen_x:.3f}, {self.origen_y:.3f}) | '
+            f'spawn ({spawn_x:.3f}, {spawn_y:.3f})')
 
     # ------------------------------------------------------------------
-    # Conversion coordenadas mundo -> indices de celda
+    # Conversion coordenadas odom -> indices de celda
     # ------------------------------------------------------------------
 
     def mundo_a_celda(self, x, y):
-        """Convierte una posicion (x, y) del mundo a (fila, col) de la grilla.
-        Devuelve None si la posicion esta fuera de los limites de la grilla."""
+        """Convierte una posicion (x, y) en frame odom a (fila, col) de la grilla.
+        Devuelve None si la posicion esta fuera de los limites."""
         col  = int((x - self.origen_x) / self.resolucion)
         fila = int((y - self.origen_y) / self.resolucion)
 
@@ -69,20 +92,21 @@ class GridMapperNode(Node):
     # ------------------------------------------------------------------
 
     def odom_callback(self, msg):
+        # Posicion directamente en frame odom (sin conversion)
         x = msg.pose.pose.position.x
         y = msg.pose.pose.position.y
 
         celda = self.mundo_a_celda(x, y)
         if celda is not None:
             fila, col = celda
-            # Solo actualizar y publicar si el robot se ha movido a una nueva celda
+            # Solo actualizar y publicar si el robot cambio de celda
             if celda != self.ultima_celda:
                 self.contadores[fila][col] += 1
                 self.ultima_celda = celda
                 self.publicar_grilla()
         else:
             self.get_logger().warn(
-                f'Posicion fuera de grilla: ({x:.2f}, {y:.2f})',
+                f'Posicion fuera de grilla: odom ({x:.2f}, {y:.2f})',
                 throttle_duration_sec=5.0)
 
     # ------------------------------------------------------------------
@@ -98,9 +122,6 @@ class GridMapperNode(Node):
           2 visitas  ->  50  (gris medio)
           3 visitas  ->  75  (gris oscuro)
           4+ visitas -> 100  (negro, muy transitado)
-
-        Esto permite distinguir visualmente zonas exploradas una sola vez
-        de zonas recorridas repetidamente (giros en U, callejones, etc.).
         """
         if count == 0:
             return -1
@@ -120,25 +141,21 @@ class GridMapperNode(Node):
     def publicar_grilla(self):
         msg = OccupancyGrid()
 
-        # Encabezado: mismo frame que la odometria
         msg.header = Header()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = 'odom'
 
-        # Metadata de la grilla
         msg.info.resolution = self.resolucion
         msg.info.width  = self.cols
         msg.info.height = self.filas
 
-        # Origen de la grilla en el frame 'odom'
+        # Origen de la grilla en frame odom
         msg.info.origin.position.x = self.origen_x
         msg.info.origin.position.y = self.origen_y
         msg.info.origin.position.z = 0.0
-        msg.info.origin.orientation.w = 1.0   # sin rotacion
+        msg.info.origin.orientation.w = 1.0
 
-        # Convertir la matriz de contadores a lista plana (row-major).
-        # OccupancyGrid espera los datos fila por fila, de abajo hacia arriba
-        # (fila 0 = y minimo).
+        # Lista plana row-major (fila 0 = y minimo)
         datos = []
         for fila in range(self.filas):
             for col in range(self.cols):
@@ -148,7 +165,6 @@ class GridMapperNode(Node):
         msg.data = datos
         self.grid_pub.publish(msg)
 
-        # Log periodico con estadisticas basicas
         celdas_visitadas = sum(
             1 for fila in self.contadores for v in fila if v > 0)
         self.get_logger().info(
