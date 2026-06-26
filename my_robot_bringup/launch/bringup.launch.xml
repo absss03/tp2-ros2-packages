@@ -52,11 +52,11 @@
   <node pkg="my_robot_navigation" exec="grid_mapper_node" output="screen">
     <param name="spawn_x"     value="$(var spawn_x)"/>
     <param name="spawn_y"     value="$(var spawn_y)"/>
-    <param name="world_min_x" value="-3.825"/>
+    <!--<param name="world_min_x" value="-3.825"/>
     <param name="world_max_x" value="3.825"/>
     <param name="world_min_y" value="-3.150"/>
-    <param name="world_max_y" value="3.150"/>
-    <param name="resolucion"  value="0.225"/>
+    <param name="world_max_y" value="3.150"/> -->
+    <param name="resolucion"  value="0.225"/> 
     <param name="margen"      value="1.0"/>
   </node>
 
