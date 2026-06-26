@@ -11,13 +11,20 @@ class GridMapperNode(Node):
 
         # --- Parametros ROS2 (ajustables sin modificar el codigo) ---
         # Posicion de spawn del robot en el mundo de Gazebo
-        self.declare_parameter('spawn_x',      0.0)
-        self.declare_parameter('spawn_y',      0.0)
+        self.declare_parameter('spawn_x',      -2.025)
+        self.declare_parameter('spawn_y',      3.150)
         # Limites del laberinto en coordenadas del mundo
-        self.declare_parameter('world_min_x', -3.825)
-        self.declare_parameter('world_max_x',  3.825)
-        self.declare_parameter('world_min_y', -3.150)
-        self.declare_parameter('world_max_y',  3.150)
+        
+        #self.declare_parameter('world_min_x', -3.825)
+        #self.declare_parameter('world_max_x',  3.825)
+        #self.declare_parameter('world_min_y', -3.150)
+        #self.declare_parameter('world_max_y',  3.150)
+        
+
+        self.declare_parameter('world_min_x', -10.0)
+        self.declare_parameter('world_max_x',  10.0)
+        self.declare_parameter('world_min_y', -10.0)
+        self.declare_parameter('world_max_y',  10.0)
         # Resolucion de la grilla y margen extra alrededor del laberinto
         self.declare_parameter('resolucion',   0.225)
         self.declare_parameter('margen',       1.0)
@@ -36,8 +43,11 @@ class GridMapperNode(Node):
         # Para pasar de coordenadas del mundo a odom: x_odom = x_mundo - spawn_x
         # El borde inferior-izquierdo del laberinto en odom es:
         #   world_min - spawn - margen
-        self.origen_x = (world_min_x - spawn_x) - margen
-        self.origen_y = (world_min_y - spawn_y) - margen
+        
+        #self.origen_x = (world_min_x - spawn_x) - margen
+        #self.origen_y = (world_min_y - spawn_y) - margen
+        self.origen_x = world_min_x - margen
+        self.origen_y = world_min_y - margen
 
         # Tamaño de la grilla: cubre el laberinto completo mas margen en cada lado
         # REVISAR
@@ -149,7 +159,12 @@ class GridMapperNode(Node):
         msg.info.width  = self.cols
         msg.info.height = self.filas
 
+        # Origen de la grilla en frame od
         # Origen de la grilla en frame odom
+        msg.info.origin.position.x = self.origen_x
+        msg.info.origin.position.y = self.origen_y
+        msg.info.origin.position.z = 0.0
+        msg.info.origin.orientation.w = 1.0
         msg.info.origin.position.x = self.origen_x
         msg.info.origin.position.y = self.origen_y
         msg.info.origin.position.z = 0.0
