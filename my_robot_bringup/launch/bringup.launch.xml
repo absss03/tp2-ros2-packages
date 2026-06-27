@@ -29,7 +29,10 @@
     <arg name="gz_args" value="-r empty.sdf"/>
   </include> -->
   <include file="$(find-pkg-share ros_gz_sim)/launch/gz_sim.launch.py">
-    <arg name="gz_args" value="-r $(var world_path)"/>
+    <!-- <arg name="gz_args" value="-r $(var world_path)"/> -->
+    <arg name="gz_args" value="-r empty.sdf"/>
+
+    
   </include>
 
   <!-- 3. Spawn: carga el modelo del robot en Gazebo -->
