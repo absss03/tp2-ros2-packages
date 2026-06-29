@@ -41,7 +41,7 @@ class WallFollowingNode(Node):
         self.yaw_objetivo = 0.0   # yaw que el robot debe alcanzar al girar
 
         # Avance previo antes de doblar a la derecha (esquina exterior)
-        self.umbral_pre_giro = 0.30   # avanzar hasta que el frente quede a esta distancia
+        self.umbral_pre_giro = 0.20   # avanzar hasta que el frente quede a esta distancia
         self.umbral_cruce = 0.50   # frente mas abierto que esto => es un cruce: doblar ya, sin avanzar
         self.dist_max_avance = 0.15   # tope de avance (cruces sin pared frontal)
 
@@ -105,6 +105,8 @@ class WallFollowingNode(Node):
     def error_a_cardinal(self):
         """Devuelve el error angular (rad) entre el yaw actual y la
         cardinal mas cercana, relativa a la referencia inicial."""
+        if self.yaw_referencia is None:
+            return 0.0
         # Yaw relativo a la referencia
         rel = self.normalizar_angulo(self.yaw_actual - self.yaw_referencia)
         # Las cardinales relativas son 0, pi/2, pi, -pi/2
@@ -163,6 +165,8 @@ class WallFollowingNode(Node):
         izq_libre = izquierda > self.umbral_lateral
         frente_libre = adelante > self.distancia_frontal
 
+        self.get_logger().info(f'Estado: {self.estado} ultimo_giro: {self.ultimo_giro} der:{derecha:.2f}')
+
         cmd = Twist()
 
         if self.estado != 'AVANZAR':
@@ -175,11 +179,11 @@ class WallFollowingNode(Node):
             self.contador_maniobra = 0
             self.ultimo_giro = 'DER'
             self.pasos_rectos = 0
-            self.get_logger().info('Decision: doblar DERECHA (avanzo antes)', throttle_duration_sec=1.0)
+           # self.get_logger().info('Decision: doblar DERECHA (avanzo antes)', throttle_duration_sec=1.0)
 
         elif frente_libre:
             self.pasos_rectos += 1
-            if self.pasos_rectos >= 2:
+            if self.pasos_rectos >= 15:
                 self.ultimo_giro = None
 
             # --- Error LIDAR (centrado lateral) ---
