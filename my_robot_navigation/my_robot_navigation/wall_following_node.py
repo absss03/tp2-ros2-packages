@@ -45,6 +45,27 @@ class WallFollowingNode(Node):
         self.umbral_cruce = 0.50   # frente mas abierto que esto => es un cruce: doblar ya, sin avanzar
         self.dist_max_avance = 0.15   # tope de avance (cruces sin pared frontal)
 
+        # Avance previo antes de doblar a la IZQUIERDA (esquina interior)
+        # El giro a la izq se decide con pared al frente: el robot se mete
+        # hasta la pared frontal y se endereza antes de pivotar.
+        self.umbral_frontal_giro = 0.23   # avanzar hasta tener el frente a esta distancia
+        self.dist_max_avance_izq = 0.08   # tope de avance del giro izq (8 cm)
+        self.tol_alineacion = math.radians(3)  # alinear a +-3 grados antes de pivotar
+        self.fase_giro_izq = 'AVANZAR'    # sub-estado: 'AVANZAR' o 'ALINEAR'
+
+        # --- POST_GIRO contra paredes ---
+        # Despues de un giro, el robot se endereza usando las PAREDES REALES
+        # (no la cardinal, que pudo derivar). Rayos simetricos por lado:
+        #   Derecha: perpendicular = indice 135 -> rayos 125 (atras) y 145 (adelante)
+        #   Izquierda: perpendicular = indice 45 -> rayos 35 (adelante) y 55 (atras)
+        # Paralelo a la pared => los dos rayos del lado miden igual.
+        self.kp_paralelo   = 5.0          # autoridad para ponerse paralelo a la pared
+        self.kp_centro_pg  = 0.6          # autoridad (suave) para centrarse en el POST_GIRO
+        self.tol_paralelo  = 0.015        # |dif de rayos| < esto => paralelo (~5 grados)
+        self.tol_centro_pg = 0.05         # |der-izq| < esto => centrado
+        self.umbral_ve_pared = 0.60       # un rayo "ve pared" si mide menos que esto
+        self.post_giro_tope  = 50         # tope de seguridad (ticks) del POST_GIRO
+
         # Posicion del robot (odometria) para medir distancia recorrida
         self.pos_x = 0.0
         self.pos_y = 0.0
@@ -93,6 +114,44 @@ class WallFollowingNode(Node):
         # Error = cuanto falta para llegar a esa cardinal
         return self.normalizar_angulo(cardinal_mas_cercana - rel)
 
+    def cardinal_mas_cercana(self):
+        """Devuelve el yaw absoluto (rad) de la cardinal mas cercana.
+        Sirve para que los giros partan SIEMPRE de una cardinal exacta,
+        sin arrastrar el error con el que el robot llego al giro."""
+        return self.normalizar_angulo(self.yaw_actual + self.error_a_cardinal())
+
+    def alinear_con_paredes(self, ranges):
+        """Calcula la correccion angular para ponerse PARALELO al pasillo
+        usando dos rayos por pared (la pared real, no la cardinal).
+        Devuelve (err_paralelo, der_ok, izq_ok):
+          - err_paralelo: correccion angular ya con signo (None si no hay
+            ninguna pared confiable). >0 gira a izq, <0 gira a der.
+          - der_ok/izq_ok: si cada lado tiene lectura confiable de pared.
+        Paralelo a un lado => sus dos rayos miden igual."""
+        rd_ade = ranges[145]   # adelante-derecha
+        rd_atr = ranges[125]   # atras-derecha
+        ri_ade = ranges[35]    # adelante-izquierda
+        ri_atr = ranges[55]    # atras-izquierda
+
+        der_ok = rd_ade < self.umbral_ve_pared and rd_atr < self.umbral_ve_pared
+        izq_ok = ri_ade < self.umbral_ve_pared and ri_atr < self.umbral_ve_pared
+
+        # Correccion con signo verificado: si la nariz rota a la izq (CCW),
+        # en la pared DER el rayo de adelante se alarga (rd_ade-rd_atr>0) y hay
+        # que rotar a la der (correccion negativa) -> corr = -(rd_ade-rd_atr).
+        # En la pared IZQ es al reves -> corr = +(ri_ade-ri_atr).
+        corr_der = -(rd_ade - rd_atr)
+        corr_izq =  (ri_ade - ri_atr)
+
+        if der_ok and izq_ok:
+            return 0.5 * corr_der + 0.5 * corr_izq, der_ok, izq_ok
+        elif der_ok:
+            return corr_der, der_ok, izq_ok
+        elif izq_ok:
+            return corr_izq, der_ok, izq_ok
+        else:
+            return None, der_ok, izq_ok
+
     def scan_callback(self, msg):
         ranges = [r if math.isfinite(r) else 12.0 for r in msg.ranges]
 
@@ -107,7 +166,7 @@ class WallFollowingNode(Node):
         cmd = Twist()
 
         if self.estado != 'AVANZAR':
-            self.ejecutar_maniobra(cmd, adelante, frente_libre)
+            self.ejecutar_maniobra(cmd, adelante, frente_libre, ranges, derecha, izquierda)
             self.cmd_pub.publish(cmd)
             return
 
@@ -140,8 +199,6 @@ class WallFollowingNode(Node):
                 modo = 'libre'
 
             # --- Error YAW (alineacion a cardinal) ---
-            if self.yaw_actual is None or self.yaw_referencia is None:
-                return
             # error_a_cardinal devuelve cuanto girar para alinearse.
             # Lo negamos para que el signo coincida con la convencion
             # del error_lidar (correccion = -k*error)
@@ -149,16 +206,16 @@ class WallFollowingNode(Node):
 
             # --- Peso adaptativo segun cercania a pared ---
             distancia_minima = min(derecha, izquierda)
-            if distancia_minima > 0.15:
+            if distancia_minima > 0.20:
                 # Zona segura: priorizar yaw (ir derecho)
                 peso_yaw, peso_lidar = 0.9, 0.1
             else:
                 # Cerca de pared: priorizar lidar (alejarse)
-                peso_yaw, peso_lidar = 0.3, 0.7
+                peso_yaw, peso_lidar = 0.17, 0.83
 
             # --- Combinar ambos errores ---
-            kp_lidar = 2.0
-            kp_yaw   = 1.5
+            kp_lidar = 1.5
+            kp_yaw   = 2
             correccion_lidar = -kp_lidar * error_lidar
             correccion_yaw   = -kp_yaw * error_yaw
             salida = peso_lidar * correccion_lidar + peso_yaw * correccion_yaw
@@ -173,11 +230,12 @@ class WallFollowingNode(Node):
                 throttle_duration_sec=1.0)
 
         elif izq_libre and self.ultimo_giro != 'IZQ':
-            self.estado = 'GIRO_IZQ'
+            # Igual que la derecha: primero avanza/se endereza, despues pivota
+            self.estado = 'AVANCE_PREVIO_IZQ'
             self.contador_maniobra = 0
             self.ultimo_giro = 'IZQ'
             self.pasos_rectos = 0
-            self.get_logger().info('Decision: doblar IZQUIERDA', throttle_duration_sec=1.0)
+            self.get_logger().info('Decision: doblar IZQUIERDA (avanzo antes)', throttle_duration_sec=1.0)
 
         else:
             # Las tres salidas bloqueadas => callejon confirmado: giro en U directo.
@@ -189,7 +247,7 @@ class WallFollowingNode(Node):
                 throttle_duration_sec=1.0)
         self.cmd_pub.publish(cmd)
 
-    def ejecutar_maniobra(self, cmd, adelante, frente_libre):
+    def ejecutar_maniobra(self, cmd, adelante, frente_libre, ranges, derecha, izquierda):
         """Ejecuta la maniobra en curso paso a paso."""
 
         if self.estado == 'AVANCE_PREVIO_DER':
@@ -199,7 +257,7 @@ class WallFollowingNode(Node):
                 self.y_inicio = self.pos_y
             # Avanzar recto, enderezando hacia la cardinal mientras avanza
             err_card = self.error_a_cardinal()
-            cmd.linear.x  = self.vel_lineal
+            cmd.linear.x  = self.vel_lineal * 0.5
             cmd.angular.z = max(min(1.0 * err_card,
                                     self.vel_angular * 0.4),
                                 -self.vel_angular * 0.4)
@@ -207,7 +265,7 @@ class WallFollowingNode(Node):
             dist = math.hypot(self.pos_x - self.x_inicio,
                               self.pos_y - self.y_inicio)
             self.get_logger().info(
-                f'Avance previo: dist:{dist:.2f} adelante:{adelante:.2f}',
+                f'Avance previo DER: dist:{dist:.2f} adelante:{adelante:.2f}',
                 throttle_duration_sec=0.5)
             # Doblar cuando el frente esta cerca (esquina) o si llego al tope
             if (adelante < self.umbral_pre_giro
@@ -216,13 +274,52 @@ class WallFollowingNode(Node):
                 self.estado = 'GIRO_DER'
                 self.contador_maniobra = 0
 
+        elif self.estado == 'AVANCE_PREVIO_IZQ':
+            self.contador_maniobra += 1
+            if self.contador_maniobra == 1:
+                self.x_inicio = self.pos_x
+                self.y_inicio = self.pos_y
+                self.fase_giro_izq = 'AVANZAR'
+
+            err_card = self.error_a_cardinal()
+
+            if self.fase_giro_izq == 'AVANZAR':
+                # FASE 1: meterse LENTO hasta la pared frontal, enderezando.
+                cmd.linear.x  = self.vel_lineal * 0.4
+                cmd.angular.z = max(min(1.0 * err_card,
+                                        self.vel_angular * 0.4),
+                                    -self.vel_angular * 0.4)
+                dist = math.hypot(self.pos_x - self.x_inicio,
+                                  self.pos_y - self.y_inicio)
+                self.get_logger().info(
+                    f'Avance previo IZQ [avanza]: dist:{dist:.2f} adelante:{adelante:.2f}',
+                    throttle_duration_sec=0.5)
+                # Llego a la pared frontal (0.23) o al tope (8cm): pasar a alinear
+                if (adelante < self.umbral_frontal_giro
+                        or dist >= self.dist_max_avance_izq):
+                    self.fase_giro_izq = 'ALINEAR'
+
+            else:  # FASE 2: plantado (sin avanzar), enderezar a la cardinal
+                cmd.linear.x  = 0.0
+                cmd.angular.z = max(min(1.5 * err_card, self.vel_angular),
+                                    -self.vel_angular)
+                self.get_logger().info(
+                    f'Avance previo IZQ [alinea]: e_card:{math.degrees(err_card):.1f}',
+                    throttle_duration_sec=0.5)
+                # Alineado a +-3 grados (o tope de seguridad): ejecutar el giro
+                if abs(err_card) < self.tol_alineacion or self.contador_maniobra >= 100:
+                    self.estado = 'GIRO_IZQ'
+                    self.contador_maniobra = 0
+
         elif self.estado == 'GIRO_DER':
             self.contador_maniobra += 1
             if self.contador_maniobra == 1:
-                # Fijar el yaw objetivo: 90 grados a la derecha
+                # Objetivo = cardinal mas cercana - 90, NO yaw_actual - 90.
+                # Asi el giro termina EXACTO sobre una cardinal, sin arrastrar
+                # el error con el que el robot llego al giro.
                 self.yaw_objetivo = self.normalizar_angulo(
-                    self.yaw_actual - math.pi / 2.0)
-            
+                    self.cardinal_mas_cercana() - math.pi / 2.0)
+
             # Error: cuanto falta para llegar al objetivo (rad)
             err = self.normalizar_angulo(self.yaw_objetivo - self.yaw_actual)
 
@@ -243,17 +340,57 @@ class WallFollowingNode(Node):
                 self.contador_maniobra = 0
 
         elif self.estado == 'POST_GIRO':
+            # Avanza LENTO y se endereza/centra contra las PAREDES REALES.
+            # Al quedar paralelo, RESINCRONIZA la cardinal (borra la deriva
+            # de odometria para que el recto no lo vuelva a torcer).
             self.contador_maniobra += 1
-            cmd.linear.x  = self.vel_lineal * 0.5
-            cmd.angular.z = 0.0
-            if self.contador_maniobra >= 3:
+            err_paralelo, der_ok, izq_ok = self.alinear_con_paredes(ranges)
+            # Centrar SOLO si hay pared a los dos lados. Si un lado es apertura
+            # (izq o der = lejos), centrar lo tiraria hacia el hueco -> no centrar.
+            hay_dos_paredes = (derecha < self.umbral_lateral
+                               and izquierda < self.umbral_lateral)
+            err_centro = (derecha - izquierda) if hay_dos_paredes else 0.0
+
+            if err_paralelo is None:
+                # Ninguna pared confiable para enderezar: no arriesgar, seguir.
                 self.estado = 'AVANZAR'
+                self.contador_maniobra = 0
+            else:
+                # Enderezar (prioridad) + centrar (suave)
+                giro = (self.kp_paralelo * err_paralelo
+                        - self.kp_centro_pg * err_centro)
+                cmd.angular.z = max(min(giro, self.vel_angular * 0.4),
+                                    -self.vel_angular * 0.4)
+                # Avanzar lento; frenar el avance si hay algo cerca al frente
+                cmd.linear.x = self.vel_lineal * 0.25
+                if adelante < 0.20:
+                    cmd.linear.x = 0.0
+
+                self.get_logger().info(
+                    f'POST_GIRO [endereza] e_par:{err_paralelo:.3f} e_cen:{err_centro:.2f} '
+                    f'der_ok:{der_ok} izq_ok:{izq_ok}',
+                    throttle_duration_sec=0.3)
+
+                paralelo_ok = abs(err_paralelo) < self.tol_paralelo
+                centrado_ok = abs(err_centro)   < self.tol_centro_pg
+
+                if (paralelo_ok and centrado_ok) or self.contador_maniobra >= self.post_giro_tope:
+                    # Si quedo PARALELO a la pared real, resincronizar la cardinal:
+                    # esta orientacion pasa a ser exactamente la cardinal mas cercana.
+                    if paralelo_ok:
+                        self.yaw_referencia = self.normalizar_angulo(
+                            self.yaw_referencia - self.error_a_cardinal())
+                        self.get_logger().info(
+                            'POST_GIRO: cardinal resincronizada con la pared real')
+                    self.estado = 'AVANZAR'
+                    self.contador_maniobra = 0
 
         elif self.estado == 'GIRO_IZQ':
             self.contador_maniobra += 1
             if self.contador_maniobra == 1:
+                # Objetivo = cardinal mas cercana + 90 (mismo criterio que GIRO_DER)
                 self.yaw_objetivo = self.normalizar_angulo(
-                    self.yaw_actual + math.pi / 2.0)
+                    self.cardinal_mas_cercana() + math.pi / 2.0)
 
             err = self.normalizar_angulo(self.yaw_objetivo - self.yaw_actual)
 
@@ -291,10 +428,8 @@ class WallFollowingNode(Node):
                 # la pared cercana al retroceder, en vez de trabarse contra ella.
                 # lado='IZQ' => izq>der => pared cercana = DERECHA => giro CW (-1)
                 self.giro_u_dir = -1.0 if self.lado_verificacion == 'IZQ' else 1.0
-                err_card = self.error_a_cardinal()
-                cardinal_actual = self.normalizar_angulo(self.yaw_actual + err_card)
                 self.yaw_objetivo = self.normalizar_angulo(
-                    cardinal_actual + math.radians(180))
+                    self.cardinal_mas_cercana() + math.radians(180))
             err = self.normalizar_angulo(self.yaw_objetivo - self.yaw_actual)
             # Sentido FORZADO hacia la pared cercana: constante mientras esta
             # lejos, proporcional cerca del objetivo para no pasarse de largo.
@@ -304,7 +439,7 @@ class WallFollowingNode(Node):
             else:
                 cmd.angular.z = self.giro_u_dir * self.vel_angular
             # 1ra mitad del giro: retroceder (despeja la cola del rincon).
-            # 2da mitad: avanzar para completar los 180°.
+            # 2da mitad: avanzar para completar los 180.
             if abs(err) > math.radians(90):
                 cmd.linear.x = -self.vel_lineal * 0.3
             else:
