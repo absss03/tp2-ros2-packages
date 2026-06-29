@@ -43,7 +43,7 @@ class WallFollowingNode(Node):
         # Avance previo antes de doblar a la derecha (esquina exterior)
         self.umbral_pre_giro = 0.20   # avanzar hasta que el frente quede a esta distancia
         self.umbral_cruce = 0.50   # frente mas abierto que esto => es un cruce: doblar ya, sin avanzar
-        self.dist_max_avance = 0.15   # tope de avance (cruces sin pared frontal)
+        self.dist_max_avance = 0.3   # tope de avance (cruces sin pared frontal)
 
         # Avance previo antes de doblar a la IZQUIERDA (esquina interior)
         # El giro a la izq se decide con pared al frente: el robot se mete
@@ -215,7 +215,7 @@ class WallFollowingNode(Node):
                 peso_yaw, peso_lidar = 0.9, 0.1
             else:
                 # Cerca de pared: priorizar lidar (alejarse)
-                peso_yaw, peso_lidar = 0.17, 0.83
+                peso_yaw, peso_lidar = 0.1, 0.9
 
             # --- Combinar ambos errores ---
             kp_lidar = 1.5
