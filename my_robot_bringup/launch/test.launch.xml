@@ -8,14 +8,15 @@
        value="$(find-pkg-share my_robot_description)/urdf/my_robot.urdf.xacro"/>
   <let name="rviz_config_path"
        value="$(find-pkg-share my_robot_description)/rviz/urdf_config.rviz"/>
+  <let name="ekf_config_file" value="$(find-pkg-share my_robot_bringup)/config/ekf.yaml"/>
   <let name="gazebo_bridge_path"
        value="$(find-pkg-share my_robot_bringup)/config/gazebo_bridge.yaml"/>
   <let name="world_path"
        value="$(find-pkg-share my_robot_bringup)/worlds/maze.world"/>
 
   <!-- Posicion de spawn (usada por Gazebo y por grid_mapper_node) -->
-  <let name="spawn_x" value="-2.025"/>
-  <let name="spawn_y" value="3.150"/>
+  <let name="spawn_x" value="0"/>
+  <let name="spawn_y" value="0"/>
 
   <!-- 1. robot_state_publisher: lee el URDF y publica el TF del robot -->
   <node pkg="robot_state_publisher" exec="robot_state_publisher">
@@ -23,6 +24,11 @@
            value="$(command 'xacro $(var urdf_path)')"/>
     <param name="use_sim_time" value="True"/>
   </node>
+
+  <!-- <node pkg="tf2_ros" exec="static_transform_publisher" name="static_transform_publisher_world_odom" 
+        args="$(var spawn_x) $(var spawn_y) 0 0 0 0 world odom" output="screen">
+    <param name="use_sim_time" value="True"/>
+  </node> -->
 
   <!-- 2. Gazebo: lanza el simulador con laberinto maze -->
   <!-- <include file="$(find-pkg-share ros_gz_sim)/launch/gz_sim.launch.py">
@@ -37,18 +43,30 @@
 
   <!-- 3. Spawn: carga el modelo del robot en Gazebo -->
   <node pkg="ros_gz_sim" exec="create"
-        args="-topic robot_description -x $(var spawn_x) -y $(var spawn_y) -z 0.1 -Y -1.5708"/>
+        args="-topic robot_description -x $(var spawn_x) -y $(var spawn_y)"/>
 
   <!-- 4. Bridge: conecta topicos entre ROS y Gazebo -->
   <node pkg="ros_gz_bridge" exec="parameter_bridge">
     <param name="config_file" value="$(var gazebo_bridge_path)"/>
+    <param name="use_sim_time" value="True"/>
+  </node>
+  
+  <node pkg="robot_localization" exec="ekf_node" name="ekf_filter_node" output="screen">
+    <param from="$(var ekf_config_file)"/>
+    <param name="use_sim_time" value="True"/>
   </node>
 
   <!-- 5. RViz: visualizacion -->
   <node pkg="rviz2" exec="rviz2" output="screen"
         args="-d $(var rviz_config_path)"/>
 
-  <node pkg="my_robot_navigation" exec="obstacle_avoidance" output="screen"/>
+  <node pkg="my_robot_navigation" exec="obstacle_avoidance" output="screen">
+    <param name="use_sim_time" value="True"/>
+  </node>
+  
+  <node pkg="my_robot_navigation" exec="occupancy_grid" output="screen">
+    <param name="use_sim_time" value="True"/>
+  </node>
 
 
 </launch>

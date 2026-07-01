@@ -27,6 +27,7 @@ setup(
             'wall_following_node = my_robot_navigation.wall_following_node:main',
             'grid_mapper_node = my_robot_navigation.grid_mapper_node:main',
             'obstacle_avoidance = my_robot_navigation.obstacle_avoidance:main',
+            'occupancy_grid = my_robot_navigation.occupancy_grid:main'
         ],
     },
 )

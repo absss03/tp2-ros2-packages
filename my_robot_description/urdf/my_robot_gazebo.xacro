@@ -8,10 +8,34 @@
             name="gz::sim::systems::DiffDrive">
       <left_joint>Rueda_izquierda_joint</left_joint>
       <right_joint>Rueda_derecha_joint</right_joint>
+
       <wheel_separation>${wheel_separation}</wheel_separation>
       <wheel_radius>${wheel_radius}</wheel_radius>
+      
+      <odom_topic>odom</odom_topic>
+      <odom_publish_frequency>30</odom_publish_frequency>
+
       <frame_id>odom</frame_id>
       <child_frame_id>base_footprint</child_frame_id>
+      
+      <publish_odom_tf>false</publish_odom_tf>
+      <publish_wheel_tf>false</publish_wheel_tf>
+      
+      <tf_topic>/gazebo_internal/unused_diff_drive_tf</tf_topic>
+      
+    </plugin>
+  </gazebo>
+  
+  <gazebo>
+    <plugin
+      filename="gz-sim-odometry-publisher-system"
+      name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>world</odom_frame> 
+      <robot_base_frame>base_footprint</robot_base_frame>
+      <odom_topic>/real_odom</odom_topic>
+      <odom_publish_frequency>30</odom_publish_frequency>
+
+      <tf_topic>/gazebo_internal/unused_tf</tf_topic>
     </plugin>
   </gazebo>
 
@@ -128,6 +152,7 @@
       <update_rate>100</update_rate>
       <visualize>true</visualize>
       <topic>imu</topic>
+      <gz_frame_id>imu_link</gz_frame_id>
     </sensor>
   </gazebo>
   

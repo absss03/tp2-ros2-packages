@@ -1,0 +1,34 @@
+ekf_filter_node:
+  ros__parameters:
+    # 1. Configuración de Tiempos y Frecuencia
+    frequency: 30.0
+    two_d_mode: true         # Fuerza al filtro a ignorar Z, Roll y Pitch (esencial para robots 2D)
+    use_sim_time: true       # ¡CRUCIAL! Le dice al nodo que use el reloj de Gazebo y no el de tu PC
+    publish_tf: true          # Publica la transformación odom -> base_footprint
+
+    # 2. Definición del Árbol de Transformaciones (TF)
+    map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint  # Tu enlace base según tu árbol de TFs
+    world_frame: odom                # El EKF publicará la transformación odom -> base_footprint
+
+    # 3. Configuración de la Odometría de las Ruedas (Diff Drive)
+    odom0: /odom
+    odom0_config: [true, true, false,  # Posición absoluta (X, Y, Z) - No usar para evitar derivas
+                   false, false, true,  # Orientación absoluta (Roll, Pitch, Yaw)
+                   true,  true,  false,  # Velocidad lineal (vx, vy, vz) -> Tomamos vx y vy
+                   false, false, true,   # Velocidad angular (vroll, vpitch, vyaw) -> Tomamos vyaw (giro en Z)
+                   false, false, false]  # Aceleraciones (ax, ay, az)
+    odom0_differential: true
+    odom0_relative: false
+    odom0_nodelay: false
+
+    # 4. Configuración de la IMU
+    imu0: /imu
+    imu0_config: [false, false, false,  # Posición absoluta (X, Y, Z)
+                  false, false, true,   # Orientación absoluta (Roll, Pitch, Yaw) -> Tomamos el Yaw (brújula)
+                  false, false, false,  # Velocidad lineal (vx, vy, vz)
+                  false, false, false,   # Velocidad angular (vroll, vpitch, vyaw) -> Tomamos vyaw (giro en Z)
+                  false,  false, false]  # Aceleración lineal (ax, ay, az) -> Tomamos ax (aceleración frontal)
+    imu0_nodelay: false
+    imu0_differential: false
