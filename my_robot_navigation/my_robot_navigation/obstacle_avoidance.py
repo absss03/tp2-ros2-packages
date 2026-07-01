@@ -48,12 +48,13 @@ class ObstacleAvoidanceNode(Node):
         self.current_yaw = 0.0
         self.latest_scan = None
 
+    # TODO: Reeplazar el callback de la imu por los datos de /odometry/filtered
     def imu_callback(self, msg):
         q = msg.orientation # Cuaternión de la IMU
         
         # Fórmula para convertir a Yaw (rotación Z)
-        t3 = +2.0 * (q.w * q.z + q.x * q.y)
-        t4 = +1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+        t3 = 2.0 * (q.w * q.z + q.x * q.y)
+        t4 = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         self.current_yaw = math.atan2(t3, t4)
 
     def scan_callback(self, msg):
@@ -136,7 +137,7 @@ class ObstacleAvoidanceNode(Node):
                 error = self.target_angle - giro_actual # cuánto falta para los 90 grados
                 
                 # Si el error es menor a esto, terminamos el giro
-                tolerancia = 0.02 # en radianes
+                tolerancia = 0.001 # en radianes
                 if error < tolerancia:
                     self.state = 'AVANZAR'
                     
