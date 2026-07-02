@@ -17,6 +17,10 @@
   <let name="spawn_x" value="0"/>
   <let name="spawn_y" value="0"/>
 
+  <node pkg="tf2_ros" exec="static_transform_publisher" name="world_to_odom_publisher"
+        args="$(var spawn_x) $(var spawn_y) 0.1 -1.5708 0 0 world odom" />
+  <!-- args="-2.025 3.150 0.1 -1.5708 0 0 world odom" /> -->
+
   <!-- 1. robot_state_publisher: lee el URDF y publica el TF del robot -->
   <node pkg="robot_state_publisher" exec="robot_state_publisher">
     <param name="robot_description"
@@ -36,7 +40,8 @@
 
   <!-- 3. Spawn: carga el modelo del robot en Gazebo -->
   <node pkg="ros_gz_sim" exec="create"
-        args="-topic robot_description -x -2.025 -y 3.150 -z 0.1 -Y -1.5708"/>
+        args="-topic robot_description -x $(var spawn_x) -y $(var spawn_y) -z 0.1 -Y -1.5708"/>
+  <!-- args="-topic robot_description -x -2.025 -y 3.150 -z 0.1 -Y -1.5708"/> -->
 
   <!-- 4. Bridge: conecta topicos entre ROS y Gazebo -->
   <node pkg="ros_gz_bridge" exec="parameter_bridge">

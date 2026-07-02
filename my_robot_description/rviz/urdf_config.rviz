@@ -6,6 +6,7 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
+        - /Map1
       Splitter Ratio: 0.5
     Tree Height: 533
   - Class: rviz_common/Selection
@@ -69,6 +70,11 @@ Visualization Manager:
         Expand Joint Details: false
         Expand Link Details: false
         Expand Tree: false
+        Lidar_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
         Link Tree Style: Links in Alphabetic Order
         Rueda_castor_link:
           Alpha: 1
@@ -94,11 +100,6 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
-        laser_frame:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
       Mass Properties:
         Inertia: false
         Mass: false
@@ -116,6 +117,8 @@ Visualization Manager:
         All Enabled: true
         Base_castor_link:
           Value: true
+        Lidar_link:
+          Value: true
         Rueda_castor_link:
           Value: true
         Rueda_derecha_link:
@@ -126,9 +129,9 @@ Visualization Manager:
           Value: true
         base_link:
           Value: true
-        laser_frame:
-          Value: true
         odom:
+          Value: true
+        world:
           Value: true
       Marker Scale: 1
       Name: TF
@@ -141,14 +144,15 @@ Visualization Manager:
             Base_castor_link:
               Rueda_castor_link:
                 {}
+            Lidar_link:
+              {}
             Rueda_derecha_link:
               {}
             Rueda_izquierda_link:
               {}
-            laser_frame:
-              {}
-        odom:
-          {}
+        world:
+          odom:
+            {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -185,10 +189,33 @@ Visualization Manager:
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
+    - Alpha: 0.699999988079071
+      Binary representation: false
+      Binary threshold: 100
+      Class: rviz_default_plugins/Map
+      Color Scheme: map
+      Draw Behind: false
+      Enabled: true
+      Name: Map
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /grid
+      Update Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /grid_updates
+      Use Timestamp: false
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: base_footprint
+    Fixed Frame: world
     Frame Rate: 30
   Name: root
   Tools:
@@ -231,7 +258,7 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 4.713069915771484
+      Distance: 19.406219482421875
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
@@ -246,10 +273,10 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.6103981733322144
+      Pitch: 1.5697963237762451
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 5.613585472106934
+      Yaw: 3.128584861755371
     Saved: ~
 Window Geometry:
   Displays:
@@ -267,5 +294,5 @@ Window Geometry:
   Views:
     collapsed: true
   Width: 1200
-  X: 2466
+  X: 720
   Y: 52

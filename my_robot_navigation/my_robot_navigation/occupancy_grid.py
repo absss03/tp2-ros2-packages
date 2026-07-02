@@ -67,7 +67,7 @@ class OccupancyGridNode(Node):
         # Configurar el Header
         grid_msg.header = Header()
         grid_msg.header.stamp = self.get_clock().now().to_msg()
-        grid_msg.header.frame_id = 'odom' # Asegúrate de que coincida con tu árbol TF
+        grid_msg.header.frame_id = 'world' # Asegúrate de que coincida con tu árbol TF
     
 
         # Configurar la Metadata (MapMetaData)
