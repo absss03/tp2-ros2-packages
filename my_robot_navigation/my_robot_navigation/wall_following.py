@@ -8,7 +8,7 @@ import math
 class WallFollowingNode(Node):
 
     def __init__(self):
-        super().__init__('wall_following_node')
+        super().__init__('wall_following')
 
         # Parametros
         self.distancia_pared    = 0.25
