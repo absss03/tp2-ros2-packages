@@ -154,10 +154,11 @@
     </collision>
 
     <inertial>
-      <mass value="0.005"/>
+      <mass value="0.01"/>
       <origin xyz="0 0 0" rpy="0 0 0"/>
-      <inertia ixx="2e-7" ixy="0" ixz="0" iyy="2e-7" iyz="0" izz="2e-7"/>
+      <!-- <inertia ixx="2e-7" ixy="0" ixz="0" iyy="2e-7" iyz="0" izz="2e-7"/> -->
       <!-- <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/> -->
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
     </inertial>
   </link>
 
@@ -202,9 +203,8 @@
 
     <inertial>
       <mass value="0.005"/>
-      <origin xyz="0 0 0." rpy="0 0 0"/>
-      <inertia ixx="4.68e-7" ixy="0" ixz="0" iyy="4.68e-7" iyz="0" izz="7.5e-7"/>
-      <!-- <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/> -->
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
     </inertial>
   </link>
 
@@ -228,14 +228,13 @@
     </collision>
 
     <inertial>
-      <mass value="0.015"/>
-      <origin xyz="0 0 0.005" rpy="0 0 0"/>
-      <inertia ixx="2.84e-6" ixy="0" ixz="0" iyy="2.84e-6" iyz="0" izz="4.69e-6"/>
-      <!-- <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/> -->
+      <mass value="0.01"/>
+      <origin xyz="0 0 0.01" rpy="0 0 0"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
     </inertial>
   </link>
 
-  <link name="imu_link">
+  <link name="Imu_link">
     <visual>
       <geometry>
         <box size="0.02 0.02 0.01"/>
@@ -251,10 +250,9 @@
     </collision>
 
     <inertial>
-      <mass value="0.015"/>
-      <origin xyz="0 0 0.005" rpy="0 0 0"/>
-      <inertia ixx="2.84e-6" ixy="0" ixz="0" iyy="2.84e-6" iyz="0" izz="4.69e-6"/>
-      <!-- <inertia ixx="1e-4" ixy="0" ixz="0" iyy="1e-4" iyz="0" izz="1e-4"/> -->
+      <mass value="0.005"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-6" ixy="0" ixz="0" iyy="1e-6" iyz="0" izz="1e-6"/>
     </inertial>
 
   </link>
@@ -305,9 +303,9 @@
     <axis xyz="0 1 0"/>
   </joint>
 
-  <joint name="imu_joint" type="fixed">
+  <joint name="Imu_joint" type="fixed">
     <parent link="base_link"/>
-    <child link="imu_link"/>
+    <child link="Imu_link"/>
     <origin xyz="0 0 -0.005" rpy="0 0 0"/> 
   </joint>
 
