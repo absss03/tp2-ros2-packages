@@ -26,6 +26,7 @@ setup(
         'console_scripts': [
             'wall_following = my_robot_navigation.wall_following:main',
             'occupancy_grid = my_robot_navigation.occupancy_grid:main',
+            'obstacle_avoidance = my_robot_navigation.obstacle_avoidance:main',
         ],
     },
 )
