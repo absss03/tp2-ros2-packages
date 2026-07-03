@@ -27,6 +27,9 @@ setup(
             'wall_following = my_robot_navigation.wall_following:main',
             'occupancy_grid = my_robot_navigation.occupancy_grid:main',
             'obstacle_avoidance = my_robot_navigation.obstacle_avoidance:main',
+            'maze_solver = my_robot_navigation.maze_solver:main',
+            'matrix_maze_solver = my_robot_navigation.matrix_maze_solver:main',
+            'nuevo_wall_following = my_robot_navigation.nuevo_wall_following:main',
         ],
     },
 )

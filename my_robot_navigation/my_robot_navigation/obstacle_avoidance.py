@@ -1,6 +1,7 @@
 import rclpy
 from rclpy.node import Node
-from sensor_msgs.msg import LaserScan, Imu
+from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry  # <--- Cambiado de Imu a Odometry
 from geometry_msgs.msg import Twist
 import math
 
@@ -16,11 +17,11 @@ class ObstacleAvoidanceNode(Node):
             10 
         )
 
-        # Suscriptor a datos del IMU
-        self.imu_sub = self.create_subscription(
-            Imu,
-            '/imu',
-            self.imu_callback,
+        # Suscriptor a datos de Odometría Filtrada
+        self.odom_sub = self.create_subscription(
+            Odometry,                  # <--- Tipo de mensaje correcto
+            '/odometry/filtered',      # <--- Tópico solicitado
+            self.odom_callback,        # <--- Nuevo callback
             10
         )
         
@@ -32,7 +33,7 @@ class ObstacleAvoidanceNode(Node):
         self.timer = self.create_timer(timer_period, self.control_loop)
         
         # Parámetros fisicos y de navegacion
-        self.safe_distance = 0.5  # Distancia mínima permitida (en metros)
+        self.safe_distance = 0.30  # Distancia mínima permitida (en metros)
         self.linear_speed = 0.2   # Velocidad de avance (m/s)
         self.turn_speed = 0.5     # Velocidad de giro (rad/s)
 
@@ -48,11 +49,11 @@ class ObstacleAvoidanceNode(Node):
         self.current_yaw = 0.0
         self.latest_scan = None
 
-    # TODO: Reeplazar el callback de la imu por los datos de /odometry/filtered
-    def imu_callback(self, msg):
-        q = msg.orientation # Cuaternión de la IMU
+    def odom_callback(self, msg):
+        # En los mensajes de Odometry, la pose está anidada en pose.pose
+        q = msg.pose.pose.orientation 
         
-        # Fórmula para convertir a Yaw (rotación Z)
+        # Fórmula para convertir el cuaternión a Yaw (rotación Z)
         t3 = 2.0 * (q.w * q.z + q.x * q.y)
         t4 = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         self.current_yaw = math.atan2(t3, t4)
@@ -94,7 +95,7 @@ class ObstacleAvoidanceNode(Node):
             # Filtramos valores inválidos (infinitos, ceros o nulos)
             valid_ranges = [
                 r for r in front_rays 
-                if not math.isinf(r) and not math.isnan(r) and r > msg.range_min and r < msg.range_max
+                if not math.isinf(r) and not math.isnan(r) and r >= msg.range_min and r <= msg.range_max
             ]
             
             if valid_ranges: 
@@ -102,6 +103,7 @@ class ObstacleAvoidanceNode(Node):
                 # self.get_logger().info(f'Distancia al frente: {min_distance:.2f} m')
                 
                 if min_distance < self.safe_distance:
+                    self.get_logger().warn(f'Obstáculo detectado a {min_distance:.2f}m. Iniciando giro.')
                     self.start_yaw = self.current_yaw
                     self.state = 'GIRANDO_90'
                     cmd.linear.x = 0.0
@@ -127,36 +129,27 @@ class ObstacleAvoidanceNode(Node):
                 # Frenar
                 cmd.linear.x = 0.0
                 cmd.angular.z = 0.0
-                
             else:
-                # Calcular angulo de giro acumulado con el IMU
+                # Calcular ángulo de giro acumulado con la odometría
                 yaw_diff = self.current_yaw - self.start_yaw
                 yaw_diff_normalized = math.atan2(math.sin(yaw_diff), math.cos(yaw_diff))
                 giro_actual = abs(yaw_diff_normalized)
                 
-                error = self.target_angle - giro_actual # cuánto falta para los 90 grados
+                error = self.target_angle - giro_actual
                 
-                # Si el error es menor a esto, terminamos el giro
-                tolerancia = 0.001 # en radianes
+                tolerancia = 0.05 
                 if error < tolerancia:
+                    self.get_logger().info('Giro completado con éxito. Reanudando marcha.')
                     self.state = 'AVANZAR'
-                    
-                    # Frenar
                     cmd.linear.x = 0.0
                     cmd.angular.z = 0.0
                 else:
-                    # CONTROL PROPORCIONAL
-                    Kp = 0.8  # Constante proporcional
-                    
-                    # La velocidad se reduce matemáticamente a medida que el error se achica
+                    Kp = 0.8  
                     velocidad_dinamica = Kp * error 
                     
-                    # Fricción estática: Forzamos una velocidad mínima (0.15 rad/s) para que 
-                    # los motores tengan fuerza suficiente para completar el último grado
                     if velocidad_dinamica < 0.15:
                         velocidad_dinamica = 0.15
                         
-                    # Girar
                     cmd.linear.x = 0.0
                     cmd.angular.z = velocidad_dinamica
 

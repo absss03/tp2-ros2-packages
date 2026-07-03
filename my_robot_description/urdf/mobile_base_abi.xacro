@@ -178,7 +178,7 @@
       </geometry>
     </collision>
 
-    <xacro:cylinder_inertia m="0.005" r="0.015" h="0.015" o_xyz="0 0 0" o_rpy="0 0 0"/>
+    <xacro:cylinder_inertia m="0.01" r="0.015" h="0.015" o_xyz="0 0 0" o_rpy="0 0 0"/>
     <!-- <xacro:cylinder_inertia m="0.01" r="0.015" h="0.01"
                             o_xyz="0 0 0" o_rpy="0 0 0"/> -->
   </link>
