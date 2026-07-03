@@ -28,9 +28,9 @@ class OccupancyGridNode(Node):
             self.grid_qos)
 
         # 3. Configuración de la grilla
-        self.resolution = 0.25  # 1 metro por celda
-        self.width = 200       # 200 metros de ancho
-        self.height = 200      # 200 metros de alto
+        self.resolution = 0.45  # metro por celda
+        self.width = 18       # 200 metros de ancho
+        self.height = 15      # 200 metros de alto
 
         # Centrar el origen del mapa para que el robot empiece en el medio (0,0)
         self.origin_x = - (self.width * self.resolution) / 2.0
