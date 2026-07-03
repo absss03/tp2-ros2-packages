@@ -3,6 +3,8 @@ from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
+from visualization_msgs.msg import Marker, MarkerArray
+from geometry_msgs.msg import Point
 import math
 
 class WallFollowingNode(Node):
@@ -32,6 +34,7 @@ class WallFollowingNode(Node):
         self.odom_sub = self.create_subscription(
             Odometry, '/odom', self.odom_callback, 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.marker_pub = self.create_publisher(MarkerArray, '/navigation_markers', 10)
 
         # Yaw actual del robot en radianes (se actualiza en odom_callback)
         self.yaw_actual = 0.0
@@ -72,6 +75,12 @@ class WallFollowingNode(Node):
         self.x_inicio = 0.0
         self.y_inicio = 0.0
 
+        # Datos para markers
+        self.trayectoria = []
+        self.MAX_TRAYECTORIA = 10000
+        self.decisiones = []
+        self.id_decision = 0
+
         self.get_logger().info('Nodo de navegacion iniciado')
 
     def odom_callback(self, msg):
@@ -84,6 +93,12 @@ class WallFollowingNode(Node):
         # Guardar posicion para medir distancia en maniobras
         self.pos_x = msg.pose.pose.position.x
         self.pos_y = msg.pose.pose.position.y
+
+        # Registrar punto de trayectoria para el marker
+        p = Point(x=self.pos_x, y=self.pos_y, z=0.05)
+        self.trayectoria.append(p)
+        if len(self.trayectoria) > self.MAX_TRAYECTORIA:
+            self.trayectoria.pop(0)
 
         # En la primera lectura, capturar la referencia inicial
         if self.yaw_referencia is None:
@@ -172,6 +187,7 @@ class WallFollowingNode(Node):
         if self.estado != 'AVANZAR':
             self.ejecutar_maniobra(cmd, adelante, frente_libre, ranges, derecha, izquierda)
             self.cmd_pub.publish(cmd)
+            self._publicar_markers(adelante, derecha, izquierda)
             return
 
         if der_libre and self.ultimo_giro != 'DER':
@@ -179,6 +195,7 @@ class WallFollowingNode(Node):
             self.contador_maniobra = 0
             self.ultimo_giro = 'DER'
             self.pasos_rectos = 0
+            self._registrar_decision('DER')
            # self.get_logger().info('Decision: doblar DERECHA (avanzo antes)', throttle_duration_sec=1.0)
 
         elif frente_libre:
@@ -239,6 +256,7 @@ class WallFollowingNode(Node):
             self.contador_maniobra = 0
             self.ultimo_giro = 'IZQ'
             self.pasos_rectos = 0
+            self._registrar_decision('IZQ')
             self.get_logger().info('Decision: doblar IZQUIERDA (avanzo antes)', throttle_duration_sec=1.0)
 
         else:
@@ -246,10 +264,12 @@ class WallFollowingNode(Node):
             self.estado = 'GIRO_U'
             self.contador_maniobra = 0
             self.lado_verificacion = 'IZQ' if izquierda > derecha else 'DER'
+            self._registrar_decision('U')
             self.get_logger().info(
                 f'Decision: giro en U — adel:{adelante:.2f} der:{derecha:.2f} izq:{izquierda:.2f}',
                 throttle_duration_sec=1.0)
         self.cmd_pub.publish(cmd)
+        self._publicar_markers(adelante, derecha, izquierda)
 
     def ejecutar_maniobra(self, cmd, adelante, frente_libre, ranges, derecha, izquierda):
         """Ejecuta la maniobra en curso paso a paso."""
@@ -450,6 +470,115 @@ class WallFollowingNode(Node):
                 cmd.linear.x =  self.vel_lineal * 0.3
             if abs(err) < math.radians(5):
                 self.estado = 'AVANZAR'
+
+    def _registrar_decision(self, tipo):
+        self.decisiones.append({
+            'x': self.pos_x, 'y': self.pos_y,
+            'tipo': tipo, 'id': self.id_decision
+        })
+        self.id_decision += 1
+
+    def _color_decision(self, tipo):
+        colores = {
+            'DER': (0.0, 0.5, 1.0),
+            'IZQ': (1.0, 0.5, 0.0),
+            'U':   (1.0, 0.0, 0.0),
+            'STOP':(1.0, 1.0, 0.0),
+        }
+        return colores.get(tipo, (1.0, 1.0, 1.0))
+
+    def _publicar_markers(self, adelante, derecha, izquierda):
+        now = self.get_clock().now().to_msg()
+        array = MarkerArray()
+
+        if len(self.trayectoria) >= 2:
+            m = Marker()
+            m.header.frame_id = 'odom'
+            m.header.stamp = now
+            m.ns = 'trayectoria'
+            m.id = 0
+            m.type = Marker.LINE_STRIP
+            m.action = Marker.ADD
+            m.scale.x = 0.03
+            m.color.r, m.color.g, m.color.b, m.color.a = 0.0, 1.0, 0.0, 1.0
+            m.pose.orientation.w = 1.0
+            m.points = list(self.trayectoria)
+            array.markers.append(m)
+
+        for dec in self.decisiones:
+            m = Marker()
+            m.header.frame_id = 'odom'
+            m.header.stamp = now
+            m.ns = 'decisiones'
+            m.id = dec['id']
+            m.type = Marker.SPHERE
+            m.action = Marker.ADD
+            m.pose.position.x = dec['x']
+            m.pose.position.y = dec['y']
+            m.pose.position.z = 0.10
+            m.pose.orientation.w = 1.0
+            m.scale.x = m.scale.y = m.scale.z = 0.12
+            r, g, b = self._color_decision(dec['tipo'])
+            m.color.r, m.color.g, m.color.b, m.color.a = r, g, b, 1.0
+            array.markers.append(m)
+
+        m = Marker()
+        m.header.frame_id = 'odom'
+        m.header.stamp = now
+        m.ns = 'estado'
+        m.id = 0
+        m.type = Marker.TEXT_VIEW_FACING
+        m.action = Marker.ADD
+        m.pose.position.x = self.pos_x
+        m.pose.position.y = self.pos_y
+        m.pose.position.z = 0.40
+        m.pose.orientation.w = 1.0
+        m.scale.z = 0.12
+        m.color.r = m.color.g = m.color.b = m.color.a = 1.0
+        m.text = f'{self.estado}\nF:{adelante:.2f} D:{derecha:.2f} I:{izquierda:.2f}'
+        array.markers.append(m)
+
+        m = Marker()
+        m.header.frame_id = 'odom'
+        m.header.stamp = now
+        m.ns = 'orientacion'
+        m.id = 0
+        m.type = Marker.ARROW
+        m.action = Marker.ADD
+        m.pose.orientation.w = 1.0
+        cola = Point(x=self.pos_x, y=self.pos_y, z=0.05)
+        punta = Point(
+            x=self.pos_x + 0.25 * math.cos(self.yaw_actual),
+            y=self.pos_y + 0.25 * math.sin(self.yaw_actual),
+            z=0.05)
+        m.points = [cola, punta]
+        m.scale.x, m.scale.y, m.scale.z = 0.04, 0.08, 0.0
+        m.color.r, m.color.g, m.color.b, m.color.a = 1.0, 1.0, 0.0, 1.0
+        array.markers.append(m)
+
+        array.markers.append(self._marker_grilla())
+        self.marker_pub.publish(array)
+
+    def _marker_grilla(self, tamaño=5.0, paso=0.5):
+        m = Marker()
+        m.header.frame_id = 'odom'
+        m.header.stamp = self.get_clock().now().to_msg()
+        m.ns = 'grilla'
+        m.id = 0
+        m.type = Marker.LINE_LIST
+        m.action = Marker.ADD
+        m.scale.x = 0.01
+        m.color.r = m.color.g = m.color.b = 0.5
+        m.color.a = 0.5
+        m.pose.orientation.w = 1.0
+
+        pasos = int(tamaño / paso)
+        for i in range(-pasos, pasos + 1):
+            c = i * paso
+            m.points += [Point(x=c, y=-tamaño, z=0.0), Point(x=c, y=tamaño, z=0.0)]
+            m.points += [Point(x=-tamaño, y=c, z=0.0), Point(x=tamaño, y=c, z=0.0)]
+        return m
+
 
 def main(args=None):
     rclpy.init(args=args)
