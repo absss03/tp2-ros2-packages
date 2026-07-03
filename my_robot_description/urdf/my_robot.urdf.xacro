@@ -2,7 +2,10 @@
 <robot name="my_robot" xmlns:xacro="http://www.ros.org/wiki/xacro">
 
     <xacro:include filename="common_properties.xacro" />
-    <xacro:include filename="mobile_base.xacro" />
-    <xacro:include filename="my_robot_gazebo.xacro" />
+    <!-- <xacro:include filename="mobile_base.xacro" />
+    <xacro:include filename="my_robot_gazebo.xacro" /> -->
+
+    <xacro:include filename="mobile_base_abi.xacro" />
+    <xacro:include filename="my_robot_abi_gazebo.xacro" />
     
 </robot>

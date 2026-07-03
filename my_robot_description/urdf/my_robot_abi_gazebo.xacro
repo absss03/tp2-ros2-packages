@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- Plugin de traccion diferencial -->
+  <!-- Convierte comandos /cmd_vel en velocidades de cada rueda -->
+  <gazebo>
+    <plugin filename="gz-sim-diff-drive-system"
+            name="gz::sim::systems::DiffDrive">
+      <left_joint>Rueda_izquierda_joint</left_joint>
+      <right_joint>Rueda_derecha_joint</right_joint>
+
+      <wheel_separation>${wheel_separation}</wheel_separation>
+      <wheel_radius>${wheel_radius}</wheel_radius>
+      
+      <odom_topic>odom</odom_topic>
+      <odom_publish_frequency>30</odom_publish_frequency>
+
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      
+    </plugin>
+  </gazebo>
+  
+  <gazebo>
+    <plugin
+      filename="gz-sim-odometry-publisher-system"
+      name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame> 
+      <robot_base_frame>base_footprint</robot_base_frame>
+      <odom_topic>/real_odom</odom_topic>
+      <odom_publish_frequency>30</odom_publish_frequency>
+
+    </plugin>
+  </gazebo>
+
+  <!-- Plugin publicador de estado de joints -->
+  <!-- Publica las posiciones de cada joint para que robot_state_publisher actualice el TF -->
+  <gazebo>
+    <plugin filename="gz-sim-joint-state-publisher-system"
+            name="gz::sim::systems::JointStatePublisher">
+      <joint_name>Rueda_izquierda_joint</joint_name>
+      <joint_name>Rueda_derecha_joint</joint_name>
+      <joint_name>Base_castor_joint</joint_name>
+      <joint_name>Rueda_castor_joint</joint_name>
+    </plugin>
+  </gazebo>
+
+  <!-- Plugin del sensor LIDAR -->
+  <!-- Plugin de sensores, va a nivel de modelo (sin reference) -->
+  <gazebo>
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+  </gazebo>
+
+  <!-- Nuevo sensor LIDAR (RPLIDAR A1) asociado al Link_lidar-->
+  <gazebo reference="Lidar_link">
+    <sensor name="gpu_lidar" type="gpu_lidar">
+      <always_on>true</always_on>
+      <visualize>true</visualize>
+      
+      <update_rate>5.5</update_rate>
+      <topic>scan</topic>
+      <gz_frame_id>Lidar_link</gz_frame_id>
+
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>1450</samples>
+            <resolution>1.0</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          
+          <vertical>
+            <samples>1</samples>
+            <resolution>1.0</resolution>
+            <min_angle>0.0</min_angle>
+            <max_angle>0.0</max_angle>
+          </vertical>
+        </scan>
+        
+        <range>
+          <min>0.15</min>
+          <max>12.0</max>
+          <resolution>0.001</resolution> 
+        </range>
+        
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.03</stddev>
+        </noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+    
+  <!-- Evita que Gazebo fusione el joint fijo del LIDAR -->
+  <gazebo reference="Lidar_joint">
+    <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
+
+  <gazebo>
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu">
+    </plugin>
+  </gazebo>
+  
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <gz_frame_id>Lidar_link</gz_frame_id>
+      <always_on>1</always_on>
+      <update_rate>100</update_rate>
+      <visualize>true</visualize>
+      <topic>imu</topic>
+    </sensor>
+  </gazebo>
+  
+</robot>
