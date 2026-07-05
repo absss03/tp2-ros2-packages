@@ -6,7 +6,11 @@ Panels:
       Expanded:
         - /Global Options1
         - /Status1
-        - /Map1
+        - /LaserScan1
+        - /Odometry1
+        - /Odometry2
+        - /Odometry3
+        - /Odometry3/Shape1
       Splitter Ratio: 0.5
     Tree Height: 533
   - Class: rviz_common/Selection
@@ -26,7 +30,7 @@ Panels:
     Experimental: false
     Name: Time
     SyncMode: 0
-    SyncSource: LaserScan
+    SyncSource: ""
 Visualization Manager:
   Class: ""
   Displays:
@@ -70,6 +74,11 @@ Visualization Manager:
         Expand Joint Details: false
         Expand Link Details: false
         Expand Tree: false
+        Imu_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
         Lidar_link:
           Alpha: 1
           Show Axes: false
@@ -100,6 +109,11 @@ Visualization Manager:
           Show Axes: false
           Show Trail: false
           Value: true
+        caja_castor_link:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+          Value: true
       Mass Properties:
         Inertia: false
         Mass: false
@@ -117,6 +131,8 @@ Visualization Manager:
         All Enabled: true
         Base_castor_link:
           Value: true
+        Imu_link:
+          Value: true
         Lidar_link:
           Value: true
         Rueda_castor_link:
@@ -129,6 +145,8 @@ Visualization Manager:
           Value: true
         base_link:
           Value: true
+        caja_castor_link:
+          Value: true
         odom:
           Value: true
         world:
@@ -139,20 +157,16 @@ Visualization Manager:
       Show Axes: true
       Show Names: false
       Tree:
-        base_footprint:
-          base_link:
-            Base_castor_link:
-              Rueda_castor_link:
-                {}
-            Lidar_link:
-              {}
-            Rueda_derecha_link:
-              {}
-            Rueda_izquierda_link:
-              {}
         world:
           odom:
-            {}
+            base_footprint:
+              base_link:
+                Imu_link:
+                  {}
+                Lidar_link:
+                  {}
+                caja_castor_link:
+                  {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -212,6 +226,123 @@ Visualization Manager:
         Value: /grid_updates
       Use Timestamp: false
       Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: false
+      Enabled: false
+      Keep: 100
+      Name: Odometry
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 255; 25; 0
+        Head Length: 0.30000001192092896
+        Head Radius: 0.10000000149011612
+        Shaft Length: 1
+        Shaft Radius: 0.05000000074505806
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /odometry/filtered
+      Value: false
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: true
+      Enabled: true
+      Keep: 100
+      Name: Odometry
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 255; 25; 0
+        Head Length: 0.30000001192092896
+        Head Radius: 0.10000000149011612
+        Shaft Length: 1
+        Shaft Radius: 0.05000000074505806
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /real_odom
+      Value: true
+    - Angle Tolerance: 0.10000000149011612
+      Class: rviz_default_plugins/Odometry
+      Covariance:
+        Orientation:
+          Alpha: 0.5
+          Color: 255; 255; 127
+          Color Style: Unique
+          Frame: Local
+          Offset: 1
+          Scale: 1
+          Value: true
+        Position:
+          Alpha: 0.30000001192092896
+          Color: 204; 51; 204
+          Scale: 1
+          Value: true
+        Value: false
+      Enabled: true
+      Keep: 100
+      Name: Odometry
+      Position Tolerance: 0.10000000149011612
+      Shape:
+        Alpha: 1
+        Axes Length: 1
+        Axes Radius: 0.10000000149011612
+        Color: 245; 194; 17
+        Head Length: 0.30000001192092896
+        Head Radius: 0.10000000149011612
+        Shaft Length: 1
+        Shaft Radius: 0.05000000074505806
+        Value: Arrow
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /wheel_odom
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
@@ -258,16 +389,16 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 19.406219482421875
+      Distance: 10.241280555725098
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.009820224717259407
-        Y: 0.12174562364816666
-        Z: 0.08715184032917023
+        X: -1.2883132696151733
+        Y: -6.903072834014893
+        Z: 0.08594512939453125
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false

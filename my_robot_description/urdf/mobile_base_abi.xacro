@@ -77,7 +77,7 @@
   <!-- Sin geometria, punto de contacto del robot con el suelo -->
   <link name="base_footprint"/>
 
-   <link name="base_link">
+  <link name="base_link">
     <visual>
       <origin xyz="${base_visual_xyz}" rpy="${base_visual_rpy}"/>
       <geometry>
@@ -94,7 +94,7 @@
     </collision>
 
     <xacro:box_inertia m="0.12" x="${robot_length}" y="${robot_width}" z="${robot_height}"
-                       o_xyz="0 0 0" o_rpy="0 0 0"/>
+                        o_xyz="0 0 0" o_rpy="0 0 0"/>
   </link>
 
   <link name="Rueda_izquierda_link">
@@ -172,9 +172,9 @@
     </visual>
 
     <collision>
-      <origin xyz="0 0 0" rpy="1.5708 0 0"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.015" length="0.015"/>
+        <sphere radius="0.015"/>
       </geometry>
     </collision>
 

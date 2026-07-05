@@ -10,9 +10,14 @@
       <right_joint>Rueda_derecha_joint</right_joint>
       <wheel_separation>${wheel_separation}</wheel_separation>
       <wheel_radius>${wheel_radius}</wheel_radius>
+      
+
+      <odom_topic>/wheel_odom</odom_topic> 
+      <tf_topic>/gazebo_internal/tf</tf_topic>
+
       <frame_id>odom</frame_id>
       <child_frame_id>base_footprint</child_frame_id>
-      <publish_odom_tf>false</publish_odom_tf>
+
     </plugin>
   </gazebo>
 
@@ -50,7 +55,7 @@
   </gazebo>
 
   <!-- Nuevo sensor LIDAR (RPLIDAR A1) asociado al Link_lidar-->
-  <!-- <gazebo reference="Lidar_link">
+  <gazebo reference="Lidar_link">
     <sensor name="gpu_lidar" type="gpu_lidar">
 
       <pose relative_to="Lidar_link">0 0 0.01 0 0 0</pose>
@@ -91,9 +96,9 @@
         </noise>
       </lidar>
     </sensor>
-  </gazebo> -->
+  </gazebo>
 
-  <gazebo reference="Lidar_link">
+  <!-- <gazebo reference="Lidar_link">
     <sensor name="gpu_lidar" type="gpu_lidar">
       <pose relative_to="Lidar_link">0 0 0.01 0 0 0</pose>
       <always_on>true</always_on>
@@ -122,7 +127,7 @@
         </noise>
       </lidar>
     </sensor>
-  </gazebo>
+  </gazebo> -->
     
   <!-- Evita que Gazebo fusione el joint fijo del LIDAR -->
   <gazebo reference="Lidar_joint">

@@ -49,6 +49,8 @@ class ObstacleAvoidanceNode(Node):
         self.current_yaw = 0.0
         self.latest_scan = None
 
+        self.angular_velocity_z = 0.0
+
     def odom_callback(self, msg):
         # En los mensajes de Odometry, la pose está anidada en pose.pose
         q = msg.pose.pose.orientation 
@@ -57,6 +59,8 @@ class ObstacleAvoidanceNode(Node):
         t3 = 2.0 * (q.w * q.z + q.x * q.y)
         t4 = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
         self.current_yaw = math.atan2(t3, t4)
+
+        self.angular_velocity_z = msg.twist.twist.angular.z
 
     def scan_callback(self, msg):
         self.latest_scan = msg
@@ -105,6 +109,12 @@ class ObstacleAvoidanceNode(Node):
                 if min_distance < self.safe_distance:
                     self.get_logger().warn(f'Obstáculo detectado a {min_distance:.2f}m. Iniciando giro.')
                     self.start_yaw = self.current_yaw
+
+                    self.target_yaw = math.atan2(
+                        math.sin(self.current_yaw + math.pi/2),
+                        math.cos(self.current_yaw + math.pi/2)
+                    )
+
                     self.state = 'GIRANDO_90'
                     cmd.linear.x = 0.0
                     cmd.angular.z = self.turn_speed
@@ -130,28 +140,48 @@ class ObstacleAvoidanceNode(Node):
                 cmd.linear.x = 0.0
                 cmd.angular.z = 0.0
             else:
-                # Calcular ángulo de giro acumulado con la odometría
-                yaw_diff = self.current_yaw - self.start_yaw
-                yaw_diff_normalized = math.atan2(math.sin(yaw_diff), math.cos(yaw_diff))
-                giro_actual = abs(yaw_diff_normalized)
+                # Calcular ángulo de giro
+                # yaw_diff = self.current_yaw - self.start_yaw
+                # yaw_diff_normalized = math.atan2(math.sin(yaw_diff), math.cos(yaw_diff))
+                # giro_actual = abs(yaw_diff_normalized)
                 
-                error = self.target_angle - giro_actual
-                
-                tolerancia = 0.05 
-                if error < tolerancia:
+                # error = self.target_angle - giro_actual
+
+                error = math.atan2(
+                    math.sin(self.target_yaw - self.current_yaw),
+                    math.cos(self.target_yaw - self.current_yaw)
+                )
+
+                cmd.linear.x = 0.0
+
+                if abs(error) < math.radians(2):
                     self.get_logger().info('Giro completado con éxito. Reanudando marcha.')
                     self.state = 'AVANZAR'
                     cmd.linear.x = 0.0
                     cmd.angular.z = 0.0
+
+                elif abs(error) > math.radians(40):
+                    cmd.angular.z = 0.5
+                elif abs(error) > math.radians(10):
+                    cmd.angular.z = 0.30
                 else:
-                    Kp = 0.8  
-                    velocidad_dinamica = Kp * error 
+                    cmd.angular.z = 1.2 * error - 0.4 * self.angular_velocity_z
+
+                # tolerancia = 0 
+                # if error < tolerancia:
+                #     self.get_logger().info('Giro completado con éxito. Reanudando marcha.')
+                #     self.state = 'AVANZAR'
+                #     cmd.linear.x = 0.0
+                #     cmd.angular.z = 0.0
+                # else:
+                #     Kp = 0.8  
+                #     velocidad_dinamica = Kp * error 
                     
-                    if velocidad_dinamica < 0.15:
-                        velocidad_dinamica = 0.15
+                #     if velocidad_dinamica < 0.15:
+                #         velocidad_dinamica = 0.15
                         
-                    cmd.linear.x = 0.0
-                    cmd.angular.z = velocidad_dinamica
+                #     cmd.linear.x = 0.0
+                #     cmd.angular.z = velocidad_dinamica
 
         # ==========================================
         #                  ESCAPAR
