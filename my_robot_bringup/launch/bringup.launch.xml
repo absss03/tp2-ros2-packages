@@ -11,11 +11,12 @@
   <let name="gazebo_bridge_path"
        value="$(find-pkg-share my_robot_bringup)/config/gazebo_bridge.yaml"/>
   <let name="world_path"
-       value="$(find-pkg-share my_robot_bringup)/worlds/maze.world"/>
+       value="$(find-pkg-share my_robot_bringup)/worlds/maze_2.world"/>
 
   <!-- 1. robot_state_publisher: lee el URDF y publica el TF del robot -->
   <node pkg="robot_state_publisher" exec="robot_state_publisher">
     <param name="robot_description"
+           type="str"
            value="$(command 'xacro $(var urdf_path)')"/>
     <param name="use_sim_time" value="True"/>
   </node>
@@ -32,7 +33,7 @@
 
   <!-- 3. Spawn: carga el modelo del robot en Gazebo -->
   <node pkg="ros_gz_sim" exec="create"
-        args="-topic robot_description -x -2.025 -y 3.150 -z 0.1 -Y -1.5708"/>
+        args="-topic robot_description -x 4.500 -y -4.050 -z -0.0017 -Y 3.14159"/>
 
   <!-- 4. Bridge: conecta topicos entre ROS y Gazebo -->
   <node pkg="ros_gz_bridge" exec="parameter_bridge">
@@ -42,5 +43,15 @@
   <!-- 5. RViz: visualizacion -->
   <node pkg="rviz2" exec="rviz2" output="screen"
         args="-d $(var rviz_config_path)"/>
+
+  <let name="ekf_config_path"
+       value="$(find-pkg-share my_robot_bringup)/config/ekf.yaml"/>
+
+  <!-- 6. EKF: fusiona ruedas + IMU; publica /odometry/filtered
+     y la TF odom -> base_footprint -->
+  <node pkg="robot_localization" exec="ekf_node" name="ekf_filter_node"
+        output="screen">
+    <param from="$(var ekf_config_path)"/>
+  </node>
 
 </launch>

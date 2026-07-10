@@ -11,11 +11,18 @@ class WallFollowingNode(Node):
         super().__init__('wall_following_node')
 
         # Parametros
-        self.distancia_pared    = 0.25
+        self.distancia_pared    = 0.20   # seguir la pared de referencia a 20 cm
         self.distancia_frontal  = 0.25
-        self.umbral_lateral     = 0.40
+        self.umbral_lateral     = 0.40   # lado LIBRE (apertura) si mide mas
+        # Centrarse entre paredes SOLO si AMBAS estan a menos de esto.
+        # Con una pared izquierda a mas de 0.30, NO centrar: seguir la
+        # derecha a 0.20 (una pared lejana no debe arrastrar al robot).
+        self.umbral_centrado    = 0.30
         self.vel_lineal         = 0.18
         self.vel_angular        = 0.9
+        # Peso adaptativo del control recto (ver bloque en scan_callback)
+        self.dist_peligro       = 0.15   # a menos de esto: evasion
+        self.umbral_yaw_torcido = 7.0    # grados; mas que esto: enderezar
 
         # Estado de la maquina de maniobras
         self.estado = 'AVANZAR'
@@ -28,9 +35,12 @@ class WallFollowingNode(Node):
 
         self.scan_sub = self.create_subscription(
             LaserScan, '/scan', self.scan_callback, 10)
-        # Suscriptor a la odometria para conocer la orientacion (yaw)
+        # Suscriptor a la odometria FILTRADA (EKF: ruedas + IMU).
+        # El yaw de /odometry/filtered esta anclado por el giroscopo de la
+        # IMU, que no depende del patinaje de las ruedas: mayor precision
+        # angular que el /odom crudo del diff-drive.
         self.odom_sub = self.create_subscription(
-            Odometry, '/odom', self.odom_callback, 10)
+            Odometry, '/odometry/filtered', self.odom_callback, 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
         # Yaw actual del robot en radianes (se actualiza en odom_callback)
@@ -72,6 +82,24 @@ class WallFollowingNode(Node):
         self.x_inicio = 0.0
         self.y_inicio = 0.0
 
+        # --- Grilla de visitas (Tremaux) + metricas de mision ---
+        # Celda = constante de red del laberinto: 0.45 m (paredes del world en multiplos de 0.45).
+        # El robot spawnea en un punto de la red y la IMU ancla los ejes de odom paralelos al mundo: 
+        # round(pos/0.45) alinea la grilla EXACTA con las celdas reales.
+        self.tam_celda = 0.45
+        self.visitas = {}            # {(i,j): cantidad de entradas}
+        self.celda_actual = None
+        self.dist_recorrida = 0.0    # metros acumulados
+        self.pos_anterior = None
+        self.t_inicio = None         # instante del primer callback
+
+        # --- Meta (coordenadas, a priori permitidas por la catedra) ---
+        # Mundo (-0.45, 2.70) -> odom (4.95, -6.75) -> celda (11, -15)
+        self.meta_x = 4.95
+        self.meta_y = -6.75
+        self.radio_meta = 0.15   # < media celda (0.225), > radio del disco (0.099)
+        self.mision_cumplida = False
+
         self.get_logger().info('Nodo de navegacion iniciado')
 
     def odom_callback(self, msg):
@@ -84,6 +112,38 @@ class WallFollowingNode(Node):
         # Guardar posicion para medir distancia en maniobras
         self.pos_x = msg.pose.pose.position.x
         self.pos_y = msg.pose.pose.position.y
+
+        # --- Metricas: tiempo y distancia ---
+        if self.t_inicio is None:
+            self.t_inicio = self.get_clock().now()
+        if self.pos_anterior is not None:
+            self.dist_recorrida += math.hypot(
+                self.pos_x - self.pos_anterior[0],
+                self.pos_y - self.pos_anterior[1])
+        self.pos_anterior = (self.pos_x, self.pos_y)
+
+        # --- Grilla: marcar la celda al ENTRAR (no por tick) ---
+        celda = (round(self.pos_x / self.tam_celda),
+                 round(self.pos_y / self.tam_celda))
+        if celda != self.celda_actual:
+            self.celda_actual = celda
+            self.visitas[celda] = self.visitas.get(celda, 0) + 1
+            t = (self.get_clock().now() - self.t_inicio).nanoseconds * 1e-9
+            self.get_logger().info(
+                f'Celda {celda} visitas:{self.visitas[celda]} '
+                f'exploradas:{len(self.visitas)} '
+                f'dist:{self.dist_recorrida:.2f} m  t:{t:.0f} s')
+
+        # --- Detector de meta ---
+        if not self.mision_cumplida and self.t_inicio is not None:
+            if math.hypot(self.pos_x - self.meta_x,
+                          self.pos_y - self.meta_y) < self.radio_meta:
+                self.mision_cumplida = True
+                t = (self.get_clock().now() - self.t_inicio).nanoseconds * 1e-9
+                self.get_logger().info(
+                    f'*** META ALCANZADA ***  distancia: {self.dist_recorrida:.2f} m  '
+                    f'tiempo: {t:.1f} s ({t/60.0:.1f} min)  '
+                    f'celdas exploradas: {len(self.visitas)}')
 
         # En la primera lectura, capturar la referencia inicial
         if self.yaw_referencia is None:
@@ -122,6 +182,58 @@ class WallFollowingNode(Node):
         sin arrastrar el error con el que el robot llego al giro."""
         return self.normalizar_angulo(self.yaw_actual + self.error_a_cardinal())
 
+    def rumbo_grilla(self):
+        """Rumbo cardinal actual como paso de grilla (di, dj).
+        El yaw (odom) se cuantiza al multiplo de 90 grados mas cercano."""
+        k = round(self.yaw_actual / (math.pi / 2.0)) % 4
+        return [(1, 0), (0, 1), (-1, 0), (0, -1)][k]
+
+    def celda_valida(self, celda):
+        """True si la celda esta DENTRO del laberinto (9x9 m => en la
+        grilla de odom: i 0..20, j -19..1). El exterior se EXCLUYE de
+        las opciones: frontera virtual solo para la decision; el
+        wall following y el LIDAR no cambian."""
+        i, j = celda
+        return 0 <= i <= 20 and -19 <= j <= 1
+
+    def visitas_vecina(self, lado):
+        """Visitas de la celda vecina hacia 'RECTO', 'DER' o 'IZQ',
+        o None si la vecina queda fuera del laberinto."""
+        if self.celda_actual is None:
+            return 0
+        di, dj = self.rumbo_grilla()
+        if lado == 'DER':
+            di, dj = dj, -di      # rotar rumbo -90
+        elif lado == 'IZQ':
+            di, dj = -dj, di      # rotar rumbo +90
+        vecina = (self.celda_actual[0] + di, self.celda_actual[1] + dj)
+        if not self.celda_valida(vecina):
+            return None
+        return self.visitas.get(vecina, 0)
+
+    def arbitro(self, der_libre, frente_libre, izq_libre):
+        """Tremaux ACOTADO: entre las direcciones libres (LIDAR) cuya
+        vecina este dentro del laberinto, ir a la menos visitada.
+        Empate -> mano derecha. None => sin opciones (giro en U)."""
+        opciones = []
+        for libre, bloqueo, prioridad, nombre in (
+                (der_libre,    self.ultimo_giro == 'DER', 0, 'DER'),
+                (frente_libre, False,                     1, 'RECTO'),
+                (izq_libre,    self.ultimo_giro == 'IZQ', 2, 'IZQ')):
+            if libre and not bloqueo:
+                v = self.visitas_vecina(nombre)
+                if v is not None:
+                    opciones.append((v, prioridad, nombre))
+        if not opciones:
+            return None
+        visitas_min, _, eleccion = min(opciones)
+        prioritaria = min(opciones, key=lambda o: o[1])
+        if eleccion != prioritaria[2]:
+            self.get_logger().info(
+                f'Arbitro: {prioritaria[2]} tiene {prioritaria[0]} visitas; '
+                f'voy {eleccion} ({visitas_min})')
+        return eleccion
+
     def alinear_con_paredes(self, ranges):
         """Calcula la correccion angular para ponerse PARALELO al pasillo
         usando dos rayos por pared (la pared real, no la cardinal).
@@ -155,6 +267,11 @@ class WallFollowingNode(Node):
             return None, der_ok, izq_ok
 
     def scan_callback(self, msg):
+
+        if self.mision_cumplida:
+            self.cmd_pub.publish(Twist())   # mision terminada: quieto
+            return
+
         ranges = [r if math.isfinite(r) else 12.0 for r in msg.ranges]
 
         adelante  = min(ranges[175:180] + ranges[0:5])
@@ -165,7 +282,7 @@ class WallFollowingNode(Node):
         izq_libre = izquierda > self.umbral_lateral
         frente_libre = adelante > self.distancia_frontal
 
-        self.get_logger().info(f'Estado: {self.estado} ultimo_giro: {self.ultimo_giro} der:{derecha:.2f}')
+        #self.get_logger().info(f'Estado: {self.estado} ultimo_giro: {self.ultimo_giro} der:{derecha:.2f}')
 
         cmd = Twist()
 
@@ -174,22 +291,27 @@ class WallFollowingNode(Node):
             self.cmd_pub.publish(cmd)
             return
 
-        if der_libre and self.ultimo_giro != 'DER':
+        eleccion = self.arbitro(der_libre, frente_libre, izq_libre)
+
+        if eleccion == 'DER':
             self.estado = 'AVANCE_PREVIO_DER'
             self.contador_maniobra = 0
             self.ultimo_giro = 'DER'
             self.pasos_rectos = 0
            # self.get_logger().info('Decision: doblar DERECHA (avanzo antes)', throttle_duration_sec=1.0)
 
-        elif frente_libre:
+        elif eleccion == 'RECTO':
             self.pasos_rectos += 1
             if self.pasos_rectos >= 15:
                 self.ultimo_giro = None
 
-            # --- Error LIDAR (centrado lateral) ---
+            # --- Error LIDAR (seguimiento lateral) ---
+            # Centrarse SOLO en pasillo angosto (ambas paredes < 0.30).
+            # Si la izquierda esta lejos (>0.30), la referencia es la pared
+            # derecha a 0.20: el carril no se corre por una pared lejana.
             der_hay = derecha   < self.umbral_lateral
             izq_hay = izquierda < self.umbral_lateral
-            if der_hay and izq_hay:
+            if derecha < self.umbral_centrado and izquierda < self.umbral_centrado:
                 error_lidar = derecha - izquierda      # centrado entre paredes
                 modo = 'centrado'
             elif der_hay:
@@ -208,14 +330,26 @@ class WallFollowingNode(Node):
             # del error_lidar (correccion = -k*error)
             error_yaw = -self.error_a_cardinal()
 
-            # --- Peso adaptativo segun cercania a pared ---
+            # --- Peso adaptativo segun cercania a pared Y error de yaw ---
+            # Modelo linealizado del seguimiento (d = error de distancia,
+            # theta = error de yaw):  d'' + k_th*d' + v*k_d*d = 0
+            #   k_d  = peso_lidar*kp_lidar ; k_th = peso_yaw*kp_yaw
+            #   zeta = k_th / (2*sqrt(v*k_d))   con v = 0.18
+            # regimen (0.4/0.6) -> zeta=0.99 critico: converge sin serpentear
+            # torcido (0.5/0.5) -> zeta=1.36 sobreamortiguado: endereza
+            # evasion (0.1/0.9) -> zeta=0.20 agresivo: solo pegado (<0.15)
             distancia_minima = min(derecha, izquierda)
-            if distancia_minima > 0.20:
-                # Zona segura: priorizar yaw (ir derecho)
-                peso_yaw, peso_lidar = 0.9, 0.1
-            else:
-                # Cerca de pared: priorizar lidar (alejarse)
+            error_yaw_grados = abs(math.degrees(self.error_a_cardinal()))
+            if distancia_minima < self.dist_peligro and \
+                    error_yaw_grados <= self.umbral_yaw_torcido:
+                # Pegado con yaw casi bien: despegarse rapido (evasion)
                 peso_yaw, peso_lidar = 0.1, 0.9
+            elif error_yaw_grados > self.umbral_yaw_torcido:
+                # Torcido: enderezar antes de que el error crezca
+                peso_yaw, peso_lidar = 0.5, 0.5
+            else:
+                # Regimen de seguimiento/centrado: amortiguacion critica
+                peso_yaw, peso_lidar = 0.4, 0.6
 
             # --- Combinar ambos errores ---
             kp_lidar = 1.5
@@ -233,7 +367,7 @@ class WallFollowingNode(Node):
                 f'e_lidar:{error_lidar:.2f} e_yaw:{math.degrees(error_yaw):.1f}',
                 throttle_duration_sec=1.0)
 
-        elif izq_libre and self.ultimo_giro != 'IZQ':
+        elif eleccion == 'IZQ':
             # Igual que la derecha: primero avanza/se endereza, despues pivota
             self.estado = 'AVANCE_PREVIO_IZQ'
             self.contador_maniobra = 0
@@ -271,9 +405,15 @@ class WallFollowingNode(Node):
             self.get_logger().info(
                 f'Avance previo DER: dist:{dist:.2f} adelante:{adelante:.2f}',
                 throttle_duration_sec=0.5)
-            # Doblar cuando el frente esta cerca (esquina) o si llego al tope
+            # Avance minimo obligatorio antes de doblar en un cruce abierto.
+            # Sin esto, "adelante > umbral_cruce" disparaba el giro con dist=0.00
+            # y el robot doblaba pegado a la pared del cruce (chocaba).
+            avance_minimo = 0.10
+            corte_cruce = adelante > self.umbral_cruce and dist >= avance_minimo
+            # Doblar si: pared frontal cerca (esquina), cruce abierto pero ya
+            # avanzo el minimo, o llego al tope de avance (seguridad).
             if (adelante < self.umbral_pre_giro
-                    or adelante > self.umbral_cruce
+                    or corte_cruce
                     or dist >= self.dist_max_avance):
                 self.estado = 'GIRO_DER'
                 self.contador_maniobra = 0
@@ -351,8 +491,8 @@ class WallFollowingNode(Node):
             err_paralelo, der_ok, izq_ok = self.alinear_con_paredes(ranges)
             # Centrar SOLO si hay pared a los dos lados. Si un lado es apertura
             # (izq o der = lejos), centrar lo tiraria hacia el hueco -> no centrar.
-            hay_dos_paredes = (derecha < self.umbral_lateral
-                               and izquierda < self.umbral_lateral)
+            hay_dos_paredes = (derecha < self.umbral_centrado
+                               and izquierda < self.umbral_centrado)
             err_centro = (derecha - izquierda) if hay_dos_paredes else 0.0
 
             if err_paralelo is None:
@@ -449,7 +589,8 @@ class WallFollowingNode(Node):
             else:
                 cmd.linear.x =  self.vel_lineal * 0.3
             if abs(err) < math.radians(5):
-                self.estado = 'AVANZAR'
+                self.estado = 'POST_GIRO'
+                self.contador_maniobra = 0
 
 def main(args=None):
     rclpy.init(args=args)

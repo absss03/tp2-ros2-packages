@@ -35,7 +35,7 @@
   <!-- Soporte castor-->
   <xacro:property name="castor_base_mesh" value="Base_castor_link.STL"/>
   <xacro:property name="castor_base_scale" value="${global_scale} ${global_scale} ${global_scale}"/>
-  <xacro:property name="castor_base_xyz" value="0.072581 0 -0.0025"/>
+  <xacro:property name="castor_base_xyz" value="0.072581 0 -0.009"/>
   <xacro:property name="castor_base_rpy" value="0 0 0"/>
   <xacro:property name="castor_base_axis" value="0 0 1"/>
   <xacro:property name="castor_base_visual_rpy"  value="3.14159 0 3.14159"/>
@@ -201,6 +201,21 @@
     <child link="Lidar_link"/>
     <origin xyz="0 0 0.05" rpy="0 0 0"/>
     <axis xyz="0 1 0"/>
+  </joint>
+
+  <!-- Link de la IMU, sensor puntual, sin geometria visible -->
+  <link name="imu_link">
+    <inertial>
+      <mass value="0.001"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia ixx="1e-7" ixy="0" ixz="0" iyy="1e-7" iyz="0" izz="1e-7"/>
+    </inertial>
+  </link>
+  <!-- Joint que fija la IMU al chasis, en el centro de rotacion -->
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0.02" rpy="0 0 0"/>
   </joint>
 
  <!-- Instancia Link rueda derecha-->

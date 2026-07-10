@@ -12,6 +12,7 @@
       <wheel_radius>${wheel_radius}</wheel_radius>
       <frame_id>odom</frame_id>
       <child_frame_id>base_footprint</child_frame_id>
+      <publish_odom_tf>false</publish_odom_tf>
     </plugin>
   </gazebo>
 
@@ -43,7 +44,7 @@
       <always_on>true</always_on>
       <visualize>true</visualize>
       <topic>scan</topic>
-      <update_rate>2</update_rate>
+      <update_rate>10</update_rate>
       <gz_frame_id>Lidar_link</gz_frame_id>
       <lidar>
         <scan>
@@ -71,6 +72,23 @@
   <!-- Evita que Gazebo fusione el joint fijo del LIDAR -->
   <gazebo reference="Lidar_joint">
     <preserveFixedJoint>true</preserveFixedJoint>
+  </gazebo>
+
+  <!-- Plugin del sistema IMU de Gazebo -->
+  <gazebo>
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu">
+    </plugin>
+  </gazebo>
+
+  <!-- Sensor IMU asociado al imu_link -->
+  <gazebo reference="imu_link">
+    <sensor name="imu_sensor" type="imu">
+      <always_on>true</always_on>
+      <update_rate>100</update_rate>
+      <topic>imu</topic>
+      <gz_frame_id>imu_link</gz_frame_id>
+    </sensor>
   </gazebo>
 
 </robot>
