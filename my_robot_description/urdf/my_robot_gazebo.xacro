@@ -10,9 +10,24 @@
       <right_joint>Rueda_derecha_joint</right_joint>
       <wheel_separation>${wheel_separation}</wheel_separation>
       <wheel_radius>${wheel_radius}</wheel_radius>
+
+      <odom_topic>/wheel_odom</odom_topic> 
+      <tf_topic>/gazebo_internal/tf</tf_topic>
+
       <frame_id>odom</frame_id>
       <child_frame_id>base_footprint</child_frame_id>
-      <publish_odom_tf>false</publish_odom_tf>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+      filename="gz-sim-odometry-publisher-system"
+      name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>world</odom_frame> 
+      <robot_base_frame>base_footprint</robot_base_frame>
+      <odom_topic>/real_odom</odom_topic>
+      <odom_publish_frequency>30</odom_publish_frequency>
+
     </plugin>
   </gazebo>
 
