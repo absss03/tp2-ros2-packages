@@ -1,0 +1,40 @@
+ekf_filter_node:
+  ros__parameters:
+    # ------------------------------------------------------------------
+    # EKF (robot_localization): fusiona odometria de ruedas + IMU.
+    # Publica /odometry/filtered y la TF odom -> base_footprint
+    # (que fue quitada del bridge para que haya UNA sola fuente).
+    # ------------------------------------------------------------------
+    frequency: 30.0          # frecuencia de publicacion del filtro (Hz)
+    two_d_mode: true         # robot en el plano: ignora Z, roll y pitch
+    use_sim_time: true       # usar el reloj de Gazebo (crucial en simulacion)
+    publish_tf: true         # el EKF publica odom -> base_footprint
+
+    # map_frame: map
+    odom_frame: odom
+    base_link_frame: base_footprint
+    world_frame: odom
+
+    # --- Odometria de ruedas (/odom): aporta VELOCIDADES ---
+    # Las ruedas miden bien las velocidades (vx, vy, vyaw); la pose que
+    # integran es justamente la que deriva con el patinaje. Se fusiona lo
+    # confiable, no lo derivado. vy=0 del diff-drive ancla que no hay
+    # deslizamiento lateral.
+    odom0: /wheel_odom
+    odom0_config: [false, false, false,    # x, y, z          (pose: NO, deriva)
+                   false, false, false,    # roll, pitch, yaw (NO: lo da la IMU)
+                   true,  true,  false,    # vx, vy, vz       (SI)
+                   false, false, true,     # vroll, vpitch, vyaw (vyaw: SI)
+                   false, false, false]    # ax, ay, az
+    odom0_differential: false
+
+    # --- IMU (/imu): aporta la ORIENTACION ---
+    # El giroscopo mide la rotacion real del cuerpo, sin depender de las
+    # ruedas: es la referencia angular que no se contamina con el patinaje.
+    imu0: /imu
+    imu0_config: [false, false, false,     # posicion (la IMU no da posicion)
+                  false, false, true,      # yaw absoluto: SI (la clave)
+                  false, false, false,     # velocidades lineales
+                  false, false, true,      # vyaw: SI (giroscopo directo)
+                  false, false, false]     # aceleraciones
+    imu0_differential: false

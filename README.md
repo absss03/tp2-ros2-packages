@@ -33,17 +33,7 @@
    source install/setup.bash
    ```
 
-7. Ejecutar el launchfile
+7. Ejecutar el launchfile (ahora tambien lanza los nodos del paquete `my_robot_navegation`)
    ```bash
    ros2 launch my_robot_bringup bringup.launch.xml
-   ```
-
-8. En una nueva terminal ejecutar el nodo wall_following_node.py
-   ```bash
-   cd ~/ros2_ws
-   
-   source /opt/ros/jazzy/setup.bash
-   source install/setup.bash
-
-   ros2 run my_robot_navigation wall_following_node
    ```

@@ -24,7 +24,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'wall_following_node = my_robot_navigation.wall_following_node:main',
+            'wall_following = my_robot_navigation.wall_following:main',
+            'occupancy_grid = my_robot_navigation.occupancy_grid:main',
         ],
     },
 )
